@@ -124,7 +124,9 @@ _RECOMMEND_PATTERNS = (
 )
 _PROFILE_PATTERNS = (
     r"\bwhat do you know about me\b",
-    r"\bmy (profile|persona|preferences)\b",
+    # Allows a qualifier between "my" and the noun, so "my investor profile"
+    # and "my risk preferences" match as readily as "my profile".
+    r"\bmy (\w+ ){0,2}(profile|persona|preferences)\b",
     r"\bwho am i\b",
     r"\bwhat have you learn(ed|t)\b",
 )
@@ -139,10 +141,16 @@ def classify_intent(question: str, tickers: list[str]) -> Intent:
     wasteful pattern the brief warns against.
     """
     text = question.lower()
-    if any(re.search(p, text) for p in _PROFILE_PATTERNS):
-        return "profile"
+
+    # Recommendation is tested first because a request can name the profile
+    # while asking for picks — "what should I buy for my profile" is a
+    # recommendation, not a request to read the profile back. Checking profile
+    # first swallowed it, and that phrasing is one of the dashboard's own
+    # suggested prompts.
     if any(re.search(p, text) for p in _RECOMMEND_PATTERNS):
         return "recommend"
+    if any(re.search(p, text) for p in _PROFILE_PATTERNS):
+        return "profile"
     if tickers:
         return "research"
     return "general"
@@ -293,23 +301,30 @@ def _profile_answer(state: AgentState) -> str:
 # Graph
 # --------------------------------------------------------------------------- #
 def _route_after_retrieve(state: AgentState) -> str:
-    return "rank" if state.get("intent") == "recommend" else "answer"
+    return "rank" if state.get("intent") == "recommend" else "compose"
 
 
 def build_graph():
+    """Assemble the agent graph.
+
+    Node names must not collide with state keys: LangGraph rejects a graph
+    where a node is called `answer` while the state also carries an `answer`
+    field, since the two would be ambiguous when merging node output back into
+    state. Hence `compose` for the node that produces `answer`.
+    """
     graph = StateGraph(AgentState)
     graph.add_node("understand", understand)
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("rank", rank_node)
-    graph.add_node("answer", answer_node)
+    graph.add_node("compose", answer_node)
 
     graph.add_edge(START, "understand")
     graph.add_edge("understand", "retrieve")
     graph.add_conditional_edges(
-        "retrieve", _route_after_retrieve, {"rank": "rank", "answer": "answer"}
+        "retrieve", _route_after_retrieve, {"rank": "rank", "compose": "compose"}
     )
-    graph.add_edge("rank", "answer")
-    graph.add_edge("answer", END)
+    graph.add_edge("rank", "compose")
+    graph.add_edge("compose", END)
     return graph.compile()
 
 
