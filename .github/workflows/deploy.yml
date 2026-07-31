@@ -112,13 +112,30 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           role-session-name: gha-rollout-${{ github.run_id }}
 
+      - name: Find the current instance
+        id: target
+        # Resolved by tag rather than read from a repository secret. The
+        # instance is replaced whenever its configuration changes, and a
+        # pinned ID silently goes stale — the deploy then fails with an
+        # authorisation error that says nothing about the real cause.
+        run: |
+          ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=sentellent-app" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          if [ -z "$ID" ] || [ "$ID" = "None" ]; then
+            echo "No running instance tagged sentellent-app"; exit 1
+          fi
+          echo "instance_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Deploying to $ID"
+
       - name: Trigger deploy via SSM
         id: rollout
         # SSM Run Command rather than SSH: no bastion, no open port 22, no key
         # pair in GitHub secrets. The instance pulls both artefacts itself.
         run: |
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-ids "${{ steps.target.outputs.instance_id }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy ${{ needs.publish-backend.outputs.image_tag }}" \
             --parameters 'commands=["/opt/sentellent/deploy.sh"]' \
@@ -132,7 +149,7 @@ jobs:
           for i in $(seq 1 45); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "${{ steps.rollout.outputs.command_id }}" \
-              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --instance-id "${{ steps.target.outputs.instance_id }}" \
               --query "Status" --output text 2>/dev/null || echo "Pending")
             echo "attempt $i: $STATUS"
             case "$STATUS" in
@@ -141,12 +158,12 @@ jobs:
                 echo "--- stdout ---"
                 aws ssm get-command-invocation \
                   --command-id "${{ steps.rollout.outputs.command_id }}" \
-                  --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                  --instance-id "${{ steps.target.outputs.instance_id }}" \
                   --query "StandardOutputContent" --output text | tail -30
                 echo "--- stderr ---"
                 aws ssm get-command-invocation \
                   --command-id "${{ steps.rollout.outputs.command_id }}" \
-                  --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                  --instance-id "${{ steps.target.outputs.instance_id }}" \
                   --query "StandardErrorContent" --output text | tail -30
                 exit 1 ;;
             esac

@@ -139,15 +139,37 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].arn : "*"
       },
       {
-        Sid    = "TriggerDeploy"
-        Effect = "Allow"
-        Action = ["ssm:SendCommand"]
-        # Restricted to this one instance and the one document CI needs, so a
-        # compromised workflow cannot run commands across the account.
-        Resource = [
-          aws_instance.app.arn,
-          "arn:aws:ssm:${var.region}::document/AWS-RunShellScript",
-        ]
+        # The instance is replaced whenever its configuration changes, so a
+        # policy naming one instance ARN starts denying deploys the moment
+        # that happens — and the error names only "no identity-based policy
+        # allows ssm:SendCommand", which points nowhere near the real cause.
+        # Scoping by tag survives replacement while still refusing every other
+        # instance in the account.
+        Sid      = "TriggerDeployOnTaggedInstances"
+        Effect   = "Allow"
+        Action   = ["ssm:SendCommand"]
+        Resource = "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"
+        Condition = {
+          StringEquals = {
+            "ssm:resourceTag/Name" = "${local.name}-app"
+          }
+        }
+      },
+      {
+        # SendCommand authorises the document as a separate resource, and the
+        # tag condition above cannot apply to it.
+        Sid      = "TriggerDeployDocument"
+        Effect   = "Allow"
+        Action   = ["ssm:SendCommand"]
+        Resource = "arn:aws:ssm:${var.region}::document/AWS-RunShellScript"
+      },
+      {
+        # Lets the workflow discover the current instance by tag instead of
+        # depending on an ID pinned in a repository secret.
+        Sid      = "DiscoverInstance"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstances"]
+        Resource = "*"
       },
       {
         Sid      = "WatchDeploy"
