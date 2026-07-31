@@ -104,6 +104,9 @@ class Fundamentals:
 @dataclass
 class PriceMetrics:
     last_close: float | None = None
+    # Weekly closes, oldest first — enough to draw a year's shape without
+    # shipping 250 daily points to the browser for a 60-pixel sparkline.
+    close_series: list[float] = field(default_factory=list)
     return_1m: float | None = None
     return_3m: float | None = None
     return_6m: float | None = None
@@ -386,8 +389,14 @@ def _metrics_from_closes(closes: list[float]) -> PriceMetrics:
         if peak:
             drawdown = min(drawdown, price / peak - 1.0)
 
+    # Downsample to roughly weekly. Sampling beats averaging here: a mean
+    # would smooth away the peaks and troughs that make a chart readable.
+    step = max(1, len(closes) // 52)
+    series = [round(c, 2) for c in closes[::step]][-52:]
+
     return PriceMetrics(
         last_close=latest,
+        close_series=series,
         # Trading sessions, not calendar days. Each window returns None when
         # the series is too short rather than measuring over whatever history
         # happens to exist — a 29-session move reported as a "1-year return"

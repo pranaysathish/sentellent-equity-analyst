@@ -226,14 +226,15 @@ async def upsert_price_metrics(conn: asyncpg.Connection, stock_id: int, p: Price
         """
         INSERT INTO price_metrics (
             stock_id, last_close, return_1m, return_3m, return_6m, return_1y,
-            volatility_1y, drawdown_1y, fetched_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+            volatility_1y, drawdown_1y, close_series, fetched_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now())
         ON CONFLICT (stock_id) DO UPDATE SET
             last_close = EXCLUDED.last_close, return_1m = EXCLUDED.return_1m,
             return_3m = EXCLUDED.return_3m, return_6m = EXCLUDED.return_6m,
             return_1y = EXCLUDED.return_1y,
             volatility_1y = EXCLUDED.volatility_1y,
-            drawdown_1y = EXCLUDED.drawdown_1y, fetched_at = now()
+            drawdown_1y = EXCLUDED.drawdown_1y,
+            close_series = EXCLUDED.close_series, fetched_at = now()
         """,
         stock_id,
         p.last_close,
@@ -243,6 +244,7 @@ async def upsert_price_metrics(conn: asyncpg.Connection, stock_id: int, p: Price
         p.return_1y,
         p.volatility_1y,
         p.drawdown_1y,
+        json.dumps(p.close_series),
     )
 
 

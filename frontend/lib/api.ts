@@ -60,6 +60,9 @@ export interface Follow {
   market_cap_cr: number | null;
   return_1m: number | null;
   return_1y: number | null;
+  volatility_1y: number | null;
+  /** Weekly closes, oldest first — drives the sparkline. */
+  close_series: number[];
   sentiment: number;
   article_count: number;
   last_ingest_at: string | null;

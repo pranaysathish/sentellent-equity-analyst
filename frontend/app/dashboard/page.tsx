@@ -8,13 +8,10 @@ import {
   PersonaView,
   User,
   api,
-  formatCrore,
-  formatINR,
   formatNumber,
-  formatPercent,
   num,
-  sentimentLabel,
 } from "@/lib/api";
+import { StockCard, StockCardSkeleton } from "@/components/StockCard";
 
 interface Turn {
   role: "user" | "assistant";
@@ -33,7 +30,7 @@ const STARTERS = [
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
-  const [follows, setFollows] = useState<Follow[]>([]);
+  const [follows, setFollows] = useState<Follow[] | null>(null);
   const [persona, setPersona] = useState<PersonaView | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -64,7 +61,7 @@ export default function Dashboard() {
       top: messagesRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [turns]);
+  }, [turns, sending]);
 
   async function send(text: string) {
     const message = text.trim();
@@ -87,8 +84,8 @@ export default function Dashboard() {
           personaUpdated: reply.persona_updated,
         },
       ]);
-      // A turn can teach the agent something new about the investor, so the
-      // profile panel is refreshed rather than left stale.
+      // A turn can teach the agent something new, so refresh the profile
+      // rather than leaving the panel stale.
       if (reply.persona_updated) {
         api.persona().then(setPersona).catch(() => undefined);
       }
@@ -105,10 +102,8 @@ export default function Dashboard() {
 
   if (!user) {
     return (
-      <div className="login-wrap">
-        <p className="empty">
-          <span className="spinner" /> Loading…
-        </p>
+      <div className="login">
+        <span className="spinner" />
       </div>
     );
   }
@@ -117,7 +112,8 @@ export default function Dashboard() {
     <>
       <header className="topbar">
         <div className="brand">
-          Sentellent <span>Equity Analyst</span>
+          <span className="brand-mark">S</span>
+          Sentellent <span className="brand-sub">Equity Analyst</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className="who">{user.email}</span>
@@ -135,38 +131,28 @@ export default function Dashboard() {
 
       <div className="shell">
         <aside>
-          <WatchlistPanel follows={follows} onChange={reload} />
-          <PersonaPanel persona={persona} onChange={reload} />
+          <Watchlist follows={follows} onChange={reload} />
+          <ProfilePanel persona={persona} onChange={reload} />
         </aside>
 
         <main className="panel chat">
-          <h2>Research chat</h2>
+          <div className="panel-head">
+            <h2 className="panel-title">Research chat</h2>
+            <span className="meta">Answers cite only ingested sources</span>
+          </div>
 
           <div className="messages" ref={messagesRef}>
-            {turns.length === 0 && (
-              <div className="empty" style={{ marginBottom: 14 }}>
-                Ask about the stocks you follow. Every answer is built only from
-                ingested fundamentals and news, and each claim is cited.
-              </div>
-            )}
+            {turns.length === 0 && <ChatEmptyState hasStocks={(follows?.length ?? 0) > 0} />}
             {turns.map((turn, i) => (
               <TurnView key={i} turn={turn} />
             ))}
-            {sending && (
-              <div className="msg">
-                <div className="role">Analyst</div>
-                <div className="empty">
-                  <span className="spinner" /> Retrieving sources and composing a
-                  grounded answer…
-                </div>
-              </div>
-            )}
+            {sending && <Thinking />}
           </div>
 
           {turns.length === 0 && (
             <div className="suggestions">
-              {STARTERS.map((s) => (
-                <button key={s} onClick={() => send(s)}>
+              {STARTERS.map((s, i) => (
+                <button key={s} onClick={() => send(s)} style={{ animationDelay: `${i * 50}ms` }}>
                   {s}
                 </button>
               ))}
@@ -176,7 +162,7 @@ export default function Dashboard() {
           <div className="composer">
             <textarea
               value={draft}
-              placeholder="e.g. What's the sentiment on TCS this week?"
+              placeholder="Ask about a stock you follow…"
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -196,50 +182,238 @@ export default function Dashboard() {
 }
 
 /* ------------------------------------------------------------------------- */
+function Watchlist({ follows, onChange }: { follows: Follow[] | null; onChange: () => void }) {
+  const [ticker, setTicker] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function add() {
+    const symbol = ticker.trim().toUpperCase();
+    if (!symbol) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.follow(symbol);
+      setTicker("");
+      await onChange();
+      // Ingestion is a background job; check back once so the card fills in
+      // without the user having to reload.
+      setTimeout(onChange, 15000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not follow that ticker");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h2 className="panel-title">Watchlist</h2>
+        {follows && follows.length > 0 && <span className="meta">{follows.length} following</span>}
+      </div>
+      <div className="panel-body">
+        <div style={{ display: "flex", gap: 8, marginBottom: 13 }}>
+          <input
+            value={ticker}
+            placeholder="NSE symbol — RELIANCE, TCS, ITC"
+            onChange={(e) => setTicker(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+          />
+          <button className="primary" onClick={add} disabled={busy || !ticker.trim()}>
+            {busy ? <span className="spinner" /> : "Follow"}
+          </button>
+        </div>
+        {error && <div className="error">{error}</div>}
+
+        {follows === null ? (
+          <>
+            <StockCardSkeleton />
+            <div style={{ height: 9 }} />
+            <StockCardSkeleton />
+          </>
+        ) : follows.length === 0 ? (
+          <div className="empty" style={{ padding: "18px 0" }}>
+            <div className="empty-title">No stocks yet</div>
+            Follow an NSE ticker to pull its screener.in fundamentals, a year of
+            prices, and recent Indian financial news into the vector store.
+          </div>
+        ) : (
+          follows.map((f, i) => (
+            <StockCard key={f.ticker} stock={f} index={i} onChange={onChange} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+function ProfilePanel({
+  persona,
+  onChange,
+}: {
+  persona: PersonaView | null;
+  onChange: () => void;
+}) {
+  if (!persona) return null;
+  const hasProfile = persona.facts.length > 0 || persona.rules.length > 0;
+  const weights = Object.entries(persona.weights).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h2 className="panel-title">Investor profile</h2>
+        {hasProfile && <span className="badge accent">learned</span>}
+      </div>
+      <div className="panel-body">
+        {!hasProfile ? (
+          <div className="empty">
+            <div className="empty-title">Nothing learned yet</div>
+            Tell the analyst how you invest — &ldquo;I&apos;m conservative and
+            dividend-focused, and I avoid companies with debt-to-equity above
+            0.5&rdquo; — and it will remember, and apply it to every
+            recommendation.
+          </div>
+        ) : (
+          <>
+            {persona.facts.map((f, i) => (
+              <div className="fact" key={f.id} style={{ animationDelay: `${i * 40}ms` }}>
+                <span>{f.fact}</span>
+                <button
+                  className="ghost danger icon"
+                  title="Forget this"
+                  onClick={() => api.forgetFact(f.id).then(onChange)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            {persona.rules.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div className="panel-title" style={{ marginBottom: 7 }}>
+                  Screening rules
+                </div>
+                {persona.rules.map((r, i) => (
+                  <div key={i}>
+                    <span className="rule">
+                      {r.field.replace(/_/g, " ")} {r.op} {formatNumber(r.value, 2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ marginTop: hasProfile ? 18 : 16 }}>
+          <div className="panel-title" style={{ marginBottom: 10 }}>
+            Factor emphasis
+          </div>
+          {weights.map(([factor, weight]) => {
+            const value = num(weight) ?? 0;
+            // Anything still at the neutral default is not a preference, so it
+            // is drawn muted — otherwise six identical bars read as six
+            // deliberate choices.
+            const isDefault = Math.abs(value - 0.5) < 0.001;
+            return (
+              <div className="weight" key={factor}>
+                <div className="weight-label">
+                  <span>{factor}</span>
+                  <span className="num">{value.toFixed(2)}</span>
+                </div>
+                <div className={`bar${isDefault ? " muted" : ""}`}>
+                  <div style={{ width: `${Math.round(value * 100)}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+function ChatEmptyState({ hasStocks }: { hasStocks: boolean }) {
+  return (
+    <div className="empty" style={{ maxWidth: 460 }}>
+      <div className="empty-title">
+        {hasStocks ? "Ask anything about your watchlist" : "Follow a stock to begin"}
+      </div>
+      {hasStocks
+        ? "Every answer is built only from ingested fundamentals and news, and each claim links back to its source. If the data doesn't support an answer, it will say so rather than guess."
+        : "Add an NSE ticker on the left. Once its fundamentals and news are indexed, you can ask about sentiment, valuation, or what fits your investing style."}
+    </div>
+  );
+}
+
+function Thinking() {
+  return (
+    <div className="msg">
+      <div className="msg-role">Analyst</div>
+      <div className="empty" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span className="spinner" />
+        Retrieving sources and composing a grounded answer…
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
 function TurnView({ turn }: { turn: Turn }) {
   if (turn.role === "user") {
     return (
       <div className="msg user">
-        <div className="role">You</div>
-        <div className="body">{turn.content}</div>
+        <div className="msg-role">You</div>
+        <div className="msg-body">{turn.content}</div>
       </div>
     );
   }
 
   return (
     <div className="msg">
-      <div className="role">
+      <div className="msg-role">
         Analyst
-        {turn.personaUpdated && (
-          <span className="pill pos" style={{ marginLeft: 8 }}>
-            profile updated
-          </span>
-        )}
+        {turn.personaUpdated && <span className="badge accent">profile updated</span>}
       </div>
-      <div className={`body${turn.grounded === false ? " ungrounded" : ""}`}>
+      <div className={`msg-body${turn.grounded === false ? " ungrounded" : ""}`}>
         {renderAnswer(turn.content, turn.citations ?? [])}
       </div>
       {turn.citations && turn.citations.length > 0 && (
         <div className="sources">
-          <h4>Sources</h4>
+          <div className="sources-title">
+            {turn.citations.length} source{turn.citations.length === 1 ? "" : "s"}
+          </div>
           {turn.citations.map((c) => (
             <div className="source" key={c.n} id={`cite-${c.n}`}>
-              <span className="num">[{c.n}]</span>
-              <span>
+              <span className="source-num">{c.n}</span>
+              <div>
                 {c.url ? (
-                  <a href={c.url} target="_blank" rel="noreferrer noopener">
+                  <a
+                    className="source-title"
+                    href={c.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
                     {c.title}
                   </a>
                 ) : (
-                  c.title
+                  <span className="source-title">{c.title}</span>
                 )}
-                <span className="meta">
-                  {" — "}
+                <div className="source-meta">
                   {c.source}
                   {c.ticker ? ` · ${c.ticker}` : ""}
-                  {c.published_at ? ` · ${new Date(c.published_at).toLocaleDateString("en-IN")}` : ""}
-                </span>
-              </span>
+                  {c.published_at
+                    ? ` · ${new Date(c.published_at).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}`
+                    : ""}
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -252,27 +426,20 @@ function TurnView({ turn }: { turn: Turn }) {
  * Render an answer as structured content.
  *
  * The model replies in Markdown — bold for stock names, asterisk bullets for
- * findings. Rendered as raw text that surfaced as literal `**` around every
- * company name, which reads as broken output. This handles the small subset
- * the analyst prompt actually produces (bold, bullets, nesting) rather than
- * pulling in a full Markdown library and its sanitiser for four constructs.
- *
- * Everything still passes through the citation linker, so `**TCS** [3]` keeps
- * both its emphasis and its clickable source.
+ * findings. Rendering it raw surfaced literal `**` around every company name,
+ * which reads as broken output. This handles the small subset the analyst
+ * prompt actually produces rather than pulling in a full Markdown library and
+ * its sanitiser for four constructs.
  */
 function renderAnswer(text: string, citations: Citation[]) {
-  const lines = text.split("\n");
+  return text.split("\n").map((line, i) => {
+    if (!line.trim()) return <div key={i} style={{ height: "0.55em" }} />;
 
-  return lines.map((line, i) => {
-    if (!line.trim()) return <div key={i} style={{ height: "0.5em" }} />;
-
-    // Leading asterisks or dashes denote a bullet; the indent before them
-    // denotes nesting depth.
     const bullet = line.match(/^(\s*)[*-]\s+(.*)$/);
     if (bullet) {
       const depth = Math.min(Math.floor(bullet[1].length / 2), 3);
       return (
-        <div key={i} className="md-bullet" style={{ marginLeft: depth * 16 }}>
+        <div key={i} className="md-bullet" style={{ marginLeft: depth * 15 }}>
           <span className="md-dot">•</span>
           <span>{renderInline(bullet[2], citations)}</span>
         </div>
@@ -294,16 +461,10 @@ function renderAnswer(text: string, citations: Citation[]) {
 
 /** Apply bold emphasis, then citation links, to a single line. */
 function renderInline(line: string, citations: Citation[]) {
-  // Split on **bold** and *italic*, keeping the delimiters so they can be
-  // matched and replaced with real elements.
-  const parts = line.split(/(\*\*[^*]+\*\*)/g);
-
-  return parts.map((part, i) => {
+  return line.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
     const bold = part.match(/^\*\*([^*]+)\*\*$/);
     if (bold) {
-      return (
-        <strong key={i}>{renderWithCitations(bold[1], citations)}</strong>
-      );
+      return <strong key={i}>{renderWithCitations(bold[1], citations)}</strong>;
     }
     return <span key={i}>{renderWithCitations(part, citations)}</span>;
   });
@@ -311,14 +472,13 @@ function renderInline(line: string, citations: Citation[]) {
 
 /**
  * Turn inline [1] / [2, 3] markers into links that jump to the source list.
- * The numbering comes straight from the retrieval layer, so a marker with no
- * matching source is left as plain text rather than linking nowhere.
+ * The numbering comes from the retrieval layer, so a marker with no matching
+ * source is left as plain text rather than linking nowhere.
  */
 function renderWithCitations(text: string, citations: Citation[]) {
   const valid = new Set(citations.map((c) => c.n));
-  const parts = text.split(/(\[\d+(?:\s*,\s*\d+)*\])/g);
 
-  return parts.map((part, i) => {
+  return text.split(/(\[\d+(?:\s*,\s*\d+)*\])/g).map((part, i) => {
     const match = part.match(/^\[(\d+(?:\s*,\s*\d+)*)\]$/);
     if (!match) return <span key={i}>{part}</span>;
 
@@ -328,182 +488,22 @@ function renderWithCitations(text: string, citations: Citation[]) {
     return (
       <span
         key={i}
-        className="cite-marker"
-        onClick={() =>
-          document
-            .getElementById(`cite-${numbers[0]}`)
-            ?.scrollIntoView({ behavior: "smooth", block: "center" })
-        }
+        className="cite"
+        onClick={() => {
+          const el = document.getElementById(`cite-${numbers[0]}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+          // Brief highlight, so the eye lands on the right row after the jump.
+          el?.animate(
+            [
+              { background: "var(--accent-subtle)" },
+              { background: "transparent" },
+            ],
+            { duration: 900, easing: "ease-out" },
+          );
+        }}
       >
         {part}
       </span>
     );
   });
-}
-
-/* ------------------------------------------------------------------------- */
-function WatchlistPanel({ follows, onChange }: { follows: Follow[]; onChange: () => void }) {
-  const [ticker, setTicker] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function add() {
-    const symbol = ticker.trim().toUpperCase();
-    if (!symbol) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.follow(symbol);
-      setTicker("");
-      await onChange();
-      // Ingestion runs in the background; poll once so fundamentals and the
-      // first news batch appear without the user having to reload.
-      setTimeout(onChange, 12000);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not follow that ticker");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="panel">
-      <h2>Watchlist</h2>
-      <div className="add-row">
-        <input
-          value={ticker}
-          placeholder="NSE symbol, e.g. RELIANCE"
-          onChange={(e) => setTicker(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-        />
-        <button onClick={add} disabled={busy || !ticker.trim()}>
-          {busy ? <span className="spinner" /> : "Follow"}
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-
-      {follows.length === 0 ? (
-        <p className="empty">
-          No stocks followed yet. Add one to trigger ingestion of its fundamentals
-          and recent Indian financial news.
-        </p>
-      ) : (
-        follows.map((f) => {
-          const tone = sentimentLabel(f.sentiment);
-          return (
-            <div className="stock" key={f.ticker}>
-              <div className="stock-head">
-                <div>
-                  <span className="stock-ticker">{f.ticker}</span>
-                  <span className="stock-name">{f.name}</span>
-                </div>
-                <span className={`pill ${tone.tone}`}>{tone.label}</span>
-              </div>
-              <div className="stock-metrics">
-                <span>
-                  <b>{formatINR(f.current_price)}</b>
-                </span>
-                <span>
-                  P/E <b>{formatNumber(f.pe, 1)}</b>
-                </span>
-                <span>
-                  RoE <b>{formatNumber(f.roe, 1, "%")}</b>
-                </span>
-                <span>
-                  D/E <b>{formatNumber(f.debt_to_equity, 2)}</b>
-                </span>
-                <span>
-                  Yield <b>{formatNumber(f.dividend_yield, 2, "%")}</b>
-                </span>
-                <span>
-                  Mcap <b>{formatCrore(f.market_cap_cr)}</b>
-                </span>
-                <span>
-                  1Y <b>{formatPercent(f.return_1y)}</b>
-                </span>
-                <span>{f.article_count} articles</span>
-              </div>
-              <div className="stock-actions">
-                <button className="ghost" onClick={() => api.refresh(f.ticker).then(() => setTimeout(onChange, 10000))}>
-                  Refresh
-                </button>
-                <button
-                  className="ghost danger"
-                  onClick={() => api.unfollow(f.ticker).then(onChange)}
-                >
-                  Unfollow
-                </button>
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------------- */
-function PersonaPanel({ persona, onChange }: { persona: PersonaView | null; onChange: () => void }) {
-  if (!persona) return null;
-
-  const hasProfile = persona.facts.length > 0 || persona.rules.length > 0;
-
-  return (
-    <div className="panel">
-      <h2>Investor profile</h2>
-
-      {!hasProfile ? (
-        <p className="empty">
-          Nothing learned yet. Say something like &ldquo;I&apos;m conservative and
-          dividend-focused, and I avoid companies with debt-to-equity above
-          0.5&rdquo; — it will be remembered and applied to every recommendation.
-        </p>
-      ) : (
-        <>
-          {persona.facts.map((f) => (
-            <div className="fact" key={f.id}>
-              <span>{f.fact}</span>
-              <button
-                className="ghost danger"
-                title="Forget this"
-                onClick={() => api.forgetFact(f.id).then(onChange)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-
-          {persona.rules.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <h2 style={{ fontSize: 12 }}>Screening rules</h2>
-              {persona.rules.map((r, i) => (
-                <div key={i} className="fact">
-                  <code style={{ fontSize: 12.5 }}>
-                    {r.field.replace(/_/g, " ")} {r.op} {formatNumber(r.value, 2)}
-                  </code>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      <div style={{ marginTop: 14 }}>
-        <h2 style={{ fontSize: 12 }}>Factor emphasis</h2>
-        {Object.entries(persona.weights)
-          .sort((a, b) => b[1] - a[1])
-          .map(([factor, weight]) => (
-            <div className="weight" key={factor}>
-              <div className="label">
-                <span>{factor}</span>
-                <span>{formatNumber(weight, 2)}</span>
-              </div>
-              <div className="bar">
-                <div style={{ width: `${Math.round((num(weight) ?? 0) * 100)}%` }} />
-              </div>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
 }

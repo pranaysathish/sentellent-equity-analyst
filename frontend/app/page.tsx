@@ -3,12 +3,30 @@
 import { useEffect, useState } from "react";
 import { api, loginUrl } from "@/lib/api";
 
+const FEATURES = [
+  {
+    icon: "◈",
+    title: "Grounded in real data",
+    body: "screener.in fundamentals, a year of NSE prices, and news from Indian financial media — chunked, embedded and indexed into pgvector.",
+  },
+  {
+    icon: "❝",
+    title: "Every claim cited",
+    body: "Each figure links back to the article or fundamentals row it came from. If the data doesn't support an answer, it says so instead of inventing one.",
+  },
+  {
+    icon: "◆",
+    title: "Learns how you invest",
+    body: "Tell it you're dividend-focused and avoid debt. It remembers, and screens every recommendation against your own rules.",
+  },
+];
+
 export default function LoginPage() {
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If a valid session cookie is already set, skip the login screen.
+    // A valid session cookie means the sign-in screen is just a redirect.
     api
       .me()
       .then(() => {
@@ -16,57 +34,89 @@ export default function LoginPage() {
       })
       .catch(() => setChecking(false));
 
-    // The OAuth callback redirects back here with ?error=... when the
-    // round-trip fails, so surface that instead of silently showing login.
-    const params = new URLSearchParams(window.location.search);
-    const err = params.get("error");
+    // The OAuth callback returns here with ?error=… when the round trip
+    // fails, so surface that rather than silently showing the form again.
+    const err = new URLSearchParams(window.location.search).get("error");
     if (err) {
       setError(
         err === "invalid_state"
-          ? "Login session expired or was tampered with. Please try again."
-          : "Google sign-in did not complete. Please try again.",
+          ? "That sign-in attempt expired. Please try again."
+          : "Google sign-in didn't complete. Please try again.",
       );
     }
   }, []);
 
   return (
-    <div className="login-wrap">
-      <div className="panel login-card">
-        <h1>
-          Sentellent <span style={{ color: "var(--accent)" }}>Equity Analyst</span>
-        </h1>
-        <p>Your research chief of staff for the NSE &amp; BSE.</p>
+    <div className="login">
+      <div className="login-card">
+        <div className="login-mark">S</div>
 
-        <ul>
-          <li>Follow Indian tickers — RELIANCE, TCS, HDFCBANK.</li>
-          <li>
-            Fundamentals from screener.in and news from Indian financial media are
-            ingested, chunked and embedded into a vector store.
-          </li>
-          <li>
-            Every claim is grounded in a retrieved source and cited. Figures are in
-            INR. If it isn&apos;t in the data, the agent says so.
-          </li>
-          <li>
-            Tell it how you invest and it remembers — then screens your stocks
-            against your own rules.
-          </li>
-        </ul>
+        <h1>Your equity research chief of staff</h1>
+        <p>
+          An agentic analyst for the NSE and BSE. Follow Indian tickers and ask
+          questions — every answer is grounded in retrieved sources, cited, and
+          priced in rupees.
+        </p>
+
+        <div className="login-features">
+          {FEATURES.map((f, i) => (
+            <div className="feature" key={f.title} style={{ animationDelay: `${120 + i * 70}ms` }}>
+              <div className="feature-icon">{f.icon}</div>
+              <div className="feature-text">
+                <b>{f.title}</b>
+                <br />
+                {f.body}
+              </div>
+            </div>
+          ))}
+        </div>
 
         {checking ? (
-          <p className="empty">
+          <button className="google-btn" disabled>
             <span className="spinner" /> Checking your session…
-          </p>
+          </button>
         ) : (
-          <a href={loginUrl}>
-            <button className="primary" style={{ width: "100%" }}>
-              Sign in with Google
+          <a href={loginUrl} style={{ display: "block" }}>
+            <button className="google-btn">
+              <GoogleMark />
+              Continue with Google
             </button>
           </a>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {error && <div className="error">{error}</div>}
+
+        <p
+          className="meta"
+          style={{ marginTop: 18, textAlign: "center", lineHeight: 1.55 }}
+        >
+          Sign-in only — no Gmail or Calendar access is requested.
+        </p>
       </div>
     </div>
+  );
+}
+
+/** Google's mark, inlined so the button needs no network request to render. */
+function GoogleMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden>
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
   );
 }
