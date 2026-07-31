@@ -119,6 +119,7 @@ export const api = {
     request<{ status: string }>(`/follows/${ticker}/refresh`, { method: "POST" }),
 
   persona: () => request<PersonaView>("/persona"),
+  resetPersona: () => request<{ status: string }>("/persona", { method: "DELETE" }),
   forgetFact: (id: number) =>
     request<{ status: string }>(`/persona/facts/${id}`, { method: "DELETE" }),
 

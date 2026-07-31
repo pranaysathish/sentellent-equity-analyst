@@ -261,15 +261,45 @@ function ProfilePanel({
   persona: PersonaView | null;
   onChange: () => void;
 }) {
+  const [resetting, setResetting] = useState(false);
   if (!persona) return null;
+
   const hasProfile = persona.facts.length > 0 || persona.rules.length > 0;
   const weights = Object.entries(persona.weights).sort((a, b) => b[1] - a[1]);
+  // Weights can be non-neutral with no facts left — earlier versions removed
+  // the fact without the numbers it had produced. Offering reset whenever
+  // *anything* is off-default means that state is recoverable from the UI
+  // rather than needing the database.
+  const hasAnything =
+    hasProfile || weights.some(([, w]) => Math.abs((num(w) ?? 0.5) - 0.5) > 0.001);
+
+  async function reset() {
+    setResetting(true);
+    try {
+      await api.resetPersona();
+      await onChange();
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <div className="panel fill">
       <div className="panel-head">
         <h2 className="panel-title">Investor profile</h2>
-        {hasProfile && <span className="badge accent">learned</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {hasProfile && <span className="badge accent">learned</span>}
+          {hasAnything && (
+            <button
+              className="ghost danger"
+              onClick={reset}
+              disabled={resetting}
+              title="Forget everything learned about you"
+            >
+              {resetting ? <span className="spinner" /> : "Reset"}
+            </button>
+          )}
+        </div>
       </div>
       <div className="panel-body scroll">
         {!hasProfile ? (

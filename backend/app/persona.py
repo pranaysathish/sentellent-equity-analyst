@@ -349,6 +349,38 @@ async def forget_fact(user_id: str, fact_id: int) -> None:
         )
 
 
+async def reset_persona(user_id: str) -> None:
+    """Erase everything the agent has learned about an investor.
+
+    Deliberately thorough. Deactivating the facts alone would leave the derived
+    weights, the summary and the embedded persona chunk in place — and that
+    chunk is retrievable, so a "forgotten" profile could still be cited back at
+    the person who asked for it to be removed. Anything derived from a fact
+    goes with the facts.
+    """
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute(
+            "UPDATE persona_facts SET active = false, updated_at = now() "
+            "WHERE user_id = $1::uuid AND active",
+            user_id,
+        )
+        await conn.execute(
+            """
+            INSERT INTO user_persona (user_id, weights, summary, embedding, updated_at)
+            VALUES ($1::uuid, $2::jsonb, '', NULL, now())
+            ON CONFLICT (user_id) DO UPDATE
+                SET weights = EXCLUDED.weights, summary = '', embedding = NULL,
+                    version = user_persona.version + 1, updated_at = now()
+            """,
+            user_id,
+            json.dumps(NEUTRAL_WEIGHTS),
+        )
+        await conn.execute(
+            "DELETE FROM doc_chunks WHERE kind = 'persona' AND user_id = $1::uuid",
+            user_id,
+        )
+
+
 async def load_persona(user_id: str) -> Persona:
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(

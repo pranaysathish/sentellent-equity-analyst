@@ -409,6 +409,18 @@ async def forget_fact(
     return {"status": "forgotten"}
 
 
+@app.delete("/api/persona")
+async def reset_persona(user: CurrentUser = Depends(get_current_user)) -> dict[str, str]:
+    """Forget everything learned about this investor.
+
+    Exposed because the profile is built from things the user said, so they
+    should be able to take it back — and because derived state can otherwise
+    outlive its inputs, which is exactly the inconsistency this fixes.
+    """
+    await persona_mod.reset_persona(user.id)
+    return {"status": "reset"}
+
+
 @app.get("/api/recommendations")
 async def recommendations(user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
     p = await persona_mod.load_persona(user.id)
