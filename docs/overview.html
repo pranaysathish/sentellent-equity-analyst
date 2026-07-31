@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sentellent Equity Analyst — Overview</title>
+<style>
+  /* Self-contained on purpose: this is opened from disk while screen
+     recording, so it must render identically with no network. Tokens mirror
+     the application's own design system. */
+  :root{
+    --bg:#08090a; --surface:#111214; --subtle:#0c0d0f;
+    --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.13);
+    --text:#f7f8f8; --t2:#b4bcd0; --t3:#8a8f98; --t4:#62666d;
+    --accent:#5e6ad2; --accent-text:#a5adf0; --accent-sub:rgba(94,106,210,.12);
+    --ok:#4cc38a; --ok-sub:rgba(76,195,138,.1);
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:34px 40px 44px;background:var(--bg);color:var(--text);
+    font:14px/1.6 "Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(120% 90% at 50% -10%,rgba(94,106,210,.13) 0%,transparent 60%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:1400px;margin:0 auto}
+
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:26px}
+  h1{font-size:25px;font-weight:600;letter-spacing:-.03em;margin:0}
+  .sub{color:var(--t3);font-size:13.5px;margin-top:5px}
+  .live{font-family:var(--mono);font-size:11.5px;color:var(--accent-text);
+    background:var(--accent-sub);border:1px solid rgba(94,106,210,.25);
+    padding:7px 12px;border-radius:8px;white-space:nowrap}
+
+  h2{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--t4);margin:0 0 12px}
+
+  /* ---- architecture ---- */
+  .arch{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px}
+  .node{background:var(--surface);border:1px solid var(--border);border-radius:11px;
+    padding:13px 14px;position:relative}
+  .node b{display:block;font-size:13px;font-weight:600;margin-bottom:4px;letter-spacing:-.01em}
+  .node span{display:block;font-size:11.5px;color:var(--t4);line-height:1.5}
+  .node .tag{position:absolute;top:11px;right:12px;font-family:var(--mono);
+    font-size:9.5px;color:var(--t4);letter-spacing:.04em}
+  .node:not(:last-child)::after{
+    content:"";position:absolute;right:-10px;top:50%;width:10px;height:1px;
+    background:var(--border-strong)}
+  .flowNote{font-size:11.5px;color:var(--t4);margin:0 0 26px;font-family:var(--mono)}
+
+  /* ---- phases ---- */
+  .phases{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+  .phase{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .phase-h{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 15px;border-bottom:1px solid var(--border)}
+  .phase-h b{font-size:13px;font-weight:600}
+  .done{font-size:10.5px;font-weight:600;color:var(--ok);background:var(--ok-sub);
+    border:1px solid rgba(76,195,138,.25);padding:3px 9px;border-radius:999px}
+  ul{list-style:none;margin:0;padding:10px 15px 14px}
+  li{display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:12.5px;color:var(--t2)}
+  li i{color:var(--ok);font-style:normal;font-size:11px;line-height:1.55;flex-shrink:0}
+  li em{font-style:normal;color:var(--t4);font-size:11.5px}
+
+  /* ---- stack + proof ---- */
+  .cols{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:15px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--t2);background:var(--subtle);
+    border:1px solid var(--border);border-radius:6px;padding:5px 9px}
+  .chip.on{color:var(--accent-text);border-color:rgba(94,106,210,.28);background:var(--accent-sub)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);
+    border:1px solid var(--border);border-radius:9px;overflow:hidden}
+  .stat{background:var(--subtle);padding:11px 12px}
+  .stat b{display:block;font-family:var(--mono);font-size:17px;letter-spacing:-.02em}
+  .stat span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t4);margin-top:3px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:12.5px;
+    border-bottom:1px solid var(--border)}
+  .kv:last-child{border-bottom:none}
+  .kv span{color:var(--t4)}
+  .kv b{font-weight:500;color:var(--t2);font-family:var(--mono);font-size:11.5px;text-align:right}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Sentellent Equity Analyst</h1>
+      <div class="sub">Agentic RAG research assistant for the NSE &amp; BSE — grounded, cited, in INR</div>
+    </div>
+    <div class="live">● LIVE — rnfl1abgkf.execute-api.ap-south-1.amazonaws.com</div>
+  </header>
+
+  <h2>Architecture</h2>
+  <div class="arch">
+    <div class="node"><span class="tag">GCP</span><b>Sign in</b><span>Google OAuth · httpOnly JWT session</span></div>
+    <div class="node"><span class="tag">AWS</span><b>API Gateway</b><span>HTTPS front door · nginx · origin-locked</span></div>
+    <div class="node"><span class="tag">EC2</span><b>FastAPI + LangGraph</b><span>understand → retrieve → rank → answer</span></div>
+    <div class="node"><span class="tag">RDS</span><b>PostgreSQL + pgvector</b><span>news, fundamentals &amp; persona vectors</span></div>
+    <div class="node"><span class="tag">API</span><b>Gemini</b><span>embeddings · tagging · answers</span></div>
+  </div>
+  <p class="flowNote">ingest: screener.in + yfinance + Indian news RSS → dedupe → chunk → embed → index → LLM sentiment pass → rolling score</p>
+
+  <h2>Requirement coverage</h2>
+  <div class="phases">
+
+    <div class="phase">
+      <div class="phase-h"><b>Phase 1 — Foundation</b><span class="done">COMPLETE</span></div>
+      <ul>
+        <li><i>✓</i><div>OAuth login <em>— Google, sign-in scopes only</em></div></li>
+        <li><i>✓</i><div>LangGraph agent <em>— 4-node state machine</em></div></li>
+        <li><i>✓</i><div>DB + vector store <em>— RDS PostgreSQL 16, pgvector, HNSW</em></div></li>
+        <li><i>✓</i><div>Terraform <em>— 56 resources, one command</em></div></li>
+        <li><i>✓</i><div>CI/CD <em>— push to main deploys and verifies</em></div></li>
+        <li><i>✓</i><div>DB migrations <em>— on boot, advisory-locked</em></div></li>
+        <li><i>✓</i><div>Live on AWS <em>— grounded cited answer in INR</em></div></li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-h"><b>Phase 2 — Integration</b><span class="done">COMPLETE</span></div>
+      <ul>
+        <li><i>✓</i><div>Fundamentals <em>— screener.in, NSE &amp; BSE IDs stored</em></div></li>
+        <li><i>✓</i><div>Indian news RSS <em>— ET, Moneycontrol, Mint, BS</em></div></li>
+        <li><i>✓</i><div>Prices <em>— yfinance .NS, 1-year series</em></div></li>
+        <li><i>✓</i><div>Chunk · embed · index <em>— pipeline built by hand</em></div></li>
+        <li><i>✓</i><div>LLM tagging <em>— sentiment, impact, event per stock</em></div></li>
+        <li><i>✓</i><div>Retrieval + citation tools <em>— hybrid vector + keyword</em></div></li>
+        <li><i>✓</i><div>Scheduled refresh <em>— cron, every 6 hours</em></div></li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <div class="phase-h"><b>Phase 3 — The Brain</b><span class="done">COMPLETE</span></div>
+      <ul>
+        <li><i>✓</i><div>Persona from chat <em>— facts, rules, factor weights</em></div></li>
+        <li><i>✓</i><div>Persona vector <em>— embedded, rebuilt on change</em></div></li>
+        <li><i>✓</i><div>Facts from data <em>— rolling sentiment, no prompting</em></div></li>
+        <li><i>✓</i><div>Score stocks to persona <em>— 6 factors, zero LLM calls</em></div></li>
+        <li><i>✓</i><div>Hard-rule screening <em>— exclusions stated with reason</em></div></li>
+        <li><i>✓</i><div>Anti-hallucination <em>— no sources ⇒ no model call</em></div></li>
+        <li><i>✓</i><div>Cited &amp; INR-correct <em>— every claim links to source</em></div></li>
+      </ul>
+    </div>
+
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Stack — as specified</h2>
+      <div class="chips">
+        <span class="chip on">Next.js 16</span><span class="chip on">FastAPI</span>
+        <span class="chip on">LangGraph</span><span class="chip on">pgvector</span>
+        <span class="chip on">AWS</span><span class="chip on">Terraform</span>
+        <span class="chip on">GitHub Actions</span><span class="chip on">Docker</span>
+        <span class="chip">RDS PostgreSQL 16</span><span class="chip">API Gateway</span>
+        <span class="chip">EC2</span><span class="chip">S3</span><span class="chip">ECR</span>
+        <span class="chip">VPC</span><span class="chip">IAM · OIDC</span><span class="chip">CloudWatch</span>
+        <span class="chip">SSM</span><span class="chip">Gemini</span>
+        <span class="chip">screener.in</span><span class="chip">yfinance</span>
+      </div>
+
+      <h2 style="margin-top:18px">Engineering the brief asked for</h2>
+      <div class="kv"><span>Ranking N stocks against a persona</span><b>0 LLM calls</b></div>
+      <div class="kv"><span>Syndicated story across 3 outlets</span><b>embedded once</b></div>
+      <div class="kv"><span>Sentiment tagging</span><b>1 call / 12 articles</b></div>
+      <div class="kv"><span>Ingestion run twice</span><b>no duplicates</b></div>
+      <div class="kv"><span>Two ingests racing</span><b>advisory-locked</b></div>
+    </div>
+
+    <div class="card">
+      <h2>Proof</h2>
+      <div class="stats">
+        <div class="stat"><b>56</b><span>TF resources</span></div>
+        <div class="stat"><b>56</b><span>tests</span></div>
+        <div class="stat"><b>768</b><span>embed dims</span></div>
+        <div class="stat"><b>8</b><span>news feeds</span></div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="kv"><span>Region</span><b>ap-south-1 · Mumbai</b></div>
+        <div class="kv"><span>Vector store</span><b>pgvector · HNSW cosine</b></div>
+        <div class="kv"><span>Deploy auth</span><b>GitHub OIDC · no keys</b></div>
+        <div class="kv"><span>Pipeline ends by</span><b>verifying the live URL</b></div>
+        <div class="kv"><span>Teardown</span><b>terraform destroy</b></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
