@@ -240,12 +240,18 @@ fi
 # --------------------------------------------------------------------------- #
 cat > /opt/sentellent/refresh.sh <<'REFRESH'
 #!/bin/bash
+# Scheduled news and sentiment refresh.
+#
+# Talks to the API container directly rather than through nginx on port 80.
+# nginx only accepts requests carrying the origin token that API Gateway
+# stamps, and a local cron job has no such header — routing this through the
+# edge returned 403 and silently disabled the scheduled refresh.
 set -euo pipefail
+cd /opt/sentellent
+
 TOKEN="$(grep '^INTERNAL_REFRESH_TOKEN=' /opt/sentellent/.env | cut -d= -f2-)"
-curl -fsS -X POST http://localhost/api/internal/refresh \
-  -H "x-internal-token: $TOKEN" \
-  --max-time 900 \
-  | logger -t sentellent-refresh
+
+docker compose exec -T api   curl -fsS -X POST http://localhost:8000/api/internal/refresh   -H "x-internal-token: $TOKEN"   --max-time 900   | logger -t sentellent-refresh
 REFRESH
 chmod +x /opt/sentellent/refresh.sh
 

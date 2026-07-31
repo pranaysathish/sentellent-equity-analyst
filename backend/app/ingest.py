@@ -749,13 +749,23 @@ async def recompute_stock_sentiment(
 
     row = await conn.fetchrow(
         """
+        -- Every term is cast to double precision explicitly. The stored
+        -- columns are numeric, EXTRACT yields numeric, and the decay constant
+        -- arrives as a float8 parameter; PostgreSQL defines no operator
+        -- between numeric and double precision, so mixing them raises at plan
+        -- time rather than returning a wrong answer.
         WITH scored AS (
             SELECT
-                s.sentiment,
-                s.impact,
-                exp(-$3 * GREATEST(
-                    EXTRACT(EPOCH FROM (now() - COALESCE(a.published_at, a.fetched_at)))
-                    / 86400.0, 0)) AS recency
+                s.sentiment::float8 AS sentiment,
+                s.impact::float8    AS impact,
+                exp(
+                    -$3::float8 * GREATEST(
+                        EXTRACT(
+                            EPOCH FROM (now() - COALESCE(a.published_at, a.fetched_at))
+                        )::float8 / 86400.0,
+                        0.0
+                    )
+                ) AS recency
               FROM article_stock_signals s
               JOIN news_articles a ON a.id = s.article_id
              WHERE s.stock_id = $1
@@ -765,8 +775,8 @@ async def recompute_stock_sentiment(
         )
         SELECT
             COALESCE(SUM(sentiment * impact * recency)
-                     / NULLIF(SUM(impact * recency), 0), 0) AS score,
-            COALESCE(SUM(impact * recency), 0) AS weight,
+                     / NULLIF(SUM(impact * recency), 0), 0)::float8 AS score,
+            COALESCE(SUM(impact * recency), 0)::float8 AS weight,
             COUNT(*) AS n
           FROM scored
         """,
