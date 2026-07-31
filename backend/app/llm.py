@@ -133,6 +133,14 @@ async def _gemini_complete(
     }
     if json_mode:
         generation["responseMimeType"] = "application/json"
+        # Gemini 2.5 reasons before answering by default, and those thinking
+        # tokens are drawn from maxOutputTokens. For structured extraction the
+        # budget was spent reasoning and the JSON came back truncated — it
+        # parsed as far as the opening brace and then failed, so sentiment
+        # tagging and persona extraction both returned nothing without ever
+        # raising. Disabled here because schema-filling needs no deliberation;
+        # the conversational path keeps it.
+        generation["thinkingConfig"] = {"thinkingBudget": 0}
 
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
@@ -162,6 +170,18 @@ async def _gemini_complete(
 
     parts = (candidates[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts)
+
+    # A truncated response is otherwise indistinguishable from a bad one: the
+    # call succeeds, the text is merely incomplete, and the caller sees only a
+    # parse failure with no cause. Surfacing it as an error makes the retry
+    # meaningful and the log honest.
+    finish = candidates[0].get("finishReason")
+    if finish == "MAX_TOKENS":
+        raise LLMError(
+            f"gemini response truncated at {max_tokens} tokens "
+            f"(usage: {data.get('usageMetadata')}) — raise max_tokens"
+        )
+
     return Completion(text=text, model=model, usage=data.get("usageMetadata", {}))
 
 
