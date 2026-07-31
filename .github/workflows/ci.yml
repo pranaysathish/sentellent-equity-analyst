@@ -4,14 +4,22 @@ name: CI
 # depends on this one passing, so main is never deployed from a red build.
 
 on:
+  # Deliberately not `main`. A push there already runs the deploy workflow,
+  # which calls this one as its gate — running both means two CI runs for the
+  # same commit, competing for the same concurrency group. One cancels the
+  # other, and when the loser is the deploy's copy the whole deploy is
+  # cancelled with it. Which of the two survives is a race, which is why the
+  # results looked arbitrary.
   push:
-    branches: ["**"]
+    branches-ignore: [main]
   pull_request:
     branches: [main]
   workflow_call: # lets deploy.yml reuse this as a gate
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Keyed on the calling workflow as well as the ref, so a run invoked by
+  # deploy.yml never contends with a standalone one.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
