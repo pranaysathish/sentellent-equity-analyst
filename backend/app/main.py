@@ -7,9 +7,11 @@ session cookie is first-party and there is no CORS surface in production.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import os
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
@@ -67,6 +69,32 @@ if not settings.is_prod:
 # --------------------------------------------------------------------------- #
 # Schemas
 # --------------------------------------------------------------------------- #
+def jsonable_row(row: Any) -> dict[str, Any]:
+    """Convert a database record into JSON-friendly primitives.
+
+    Postgres `numeric` columns arrive from asyncpg as `Decimal`, and Pydantic
+    serialises `Decimal` to a JSON *string* to avoid float precision loss.
+    That is defensible for money, but it means every ratio on the wire is
+    `"24.5"` rather than `24.5`, and the browser then throws
+    `toFixed is not a function` the moment it formats one — taking the whole
+    React tree down with it.
+
+    Precision is not a concern here: these are display ratios and prices
+    already rounded to two decimals in the schema, well inside float64's exact
+    range. So they are converted once, at the boundary, rather than every
+    consumer having to defend against a string.
+    """
+    out: dict[str, Any] = {}
+    for key, value in dict(row).items():
+        if isinstance(value, Decimal):
+            out[key] = float(value)
+        elif isinstance(value, dt.datetime):
+            out[key] = value.isoformat()
+        else:
+            out[key] = value
+    return out
+
+
 class FollowRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=32)
 
@@ -224,7 +252,7 @@ async def list_follows(user: CurrentUser = Depends(get_current_user)) -> list[di
         """,
         user.id,
     )
-    return [dict(r) for r in rows]
+    return [jsonable_row(r) for r in rows]
 
 
 @app.post("/api/follows", status_code=status.HTTP_202_ACCEPTED)
@@ -345,7 +373,7 @@ async def stock_detail(
         """,
         ticker.upper(),
     )
-    return {**dict(row), "news": [dict(n) for n in news]}
+    return {**jsonable_row(row), "news": [jsonable_row(n) for n in news]}
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +391,7 @@ async def get_persona(user: CurrentUser = Depends(get_current_user)) -> dict[str
         "summary": p.summary,
         "weights": p.weights,
         "rules": p.rules,
-        "facts": [dict(f) for f in facts],
+        "facts": [jsonable_row(f) for f in facts],
     }
 
 
@@ -402,7 +430,7 @@ async def list_sessions(user: CurrentUser = Depends(get_current_user)) -> list[d
         "WHERE user_id = $1::uuid ORDER BY updated_at DESC LIMIT 50",
         user.id,
     )
-    return [dict(r) for r in rows]
+    return [jsonable_row(r) for r in rows]
 
 
 @app.get("/api/sessions/{session_id}/messages")
@@ -421,7 +449,7 @@ async def session_messages(
         "WHERE session_id = $1::uuid ORDER BY id",
         session_id,
     )
-    return [dict(r) for r in rows]
+    return [jsonable_row(r) for r in rows]
 
 
 @app.post("/api/chat", response_model=ChatResponse)

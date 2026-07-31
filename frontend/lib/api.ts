@@ -129,29 +129,56 @@ export const api = {
 export const loginUrl = `${API_BASE}/api/auth/google/login`;
 
 // --- Formatting -------------------------------------------------------------
+
+/**
+ * Coerce an API value to a finite number, or null.
+ *
+ * Numeric columns can legitimately reach the browser as strings — Postgres
+ * `numeric` becomes a Python Decimal, which JSON encoders often render as
+ * `"24.5"` to protect precision. The backend now normalises that, but calling
+ * `.toFixed()` on whatever arrives is how a single unexpected field took the
+ * whole React tree down and produced a blank "page couldn't load". Parsing
+ * defensively here means a surprising value degrades to an em dash instead.
+ */
+export function num(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** All money in this app is INR, so formatting lives in exactly one place. */
-export function formatINR(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
+export function formatINR(value: unknown): string {
+  const n = num(value);
+  if (n === null) return "—";
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(n);
 }
 
-export function formatCrore(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  if (value >= 100000) return `₹${(value / 100000).toFixed(2)} lakh cr`;
-  return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })} cr`;
+export function formatCrore(value: unknown): string {
+  const n = num(value);
+  if (n === null) return "—";
+  if (n >= 100000) return `₹${(n / 100000).toFixed(2)} lakh cr`;
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })} cr`;
 }
 
-export function formatPercent(value: number | null | undefined, alreadyPercent = false): string {
-  if (value === null || value === undefined) return "—";
-  const pct = alreadyPercent ? value : value * 100;
+export function formatPercent(value: unknown, alreadyPercent = false): string {
+  const n = num(value);
+  if (n === null) return "—";
+  const pct = alreadyPercent ? n : n * 100;
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 }
 
-export function sentimentLabel(score: number): { label: string; tone: string } {
+/** Fixed-decimal display for ratios, tolerant of nulls and stringly numbers. */
+export function formatNumber(value: unknown, decimals = 2, suffix = ""): string {
+  const n = num(value);
+  return n === null ? "—" : `${n.toFixed(decimals)}${suffix}`;
+}
+
+export function sentimentLabel(value: unknown): { label: string; tone: string } {
+  const score = num(value) ?? 0;
   if (score > 0.25) return { label: "Positive", tone: "pos" };
   if (score < -0.25) return { label: "Negative", tone: "neg" };
   return { label: "Neutral", tone: "neu" };

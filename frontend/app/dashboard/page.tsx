@@ -10,7 +10,9 @@ import {
   api,
   formatCrore,
   formatINR,
+  formatNumber,
   formatPercent,
+  num,
   sentimentLabel,
 } from "@/lib/api";
 
@@ -341,16 +343,16 @@ function WatchlistPanel({ follows, onChange }: { follows: Follow[]; onChange: ()
                   <b>{formatINR(f.current_price)}</b>
                 </span>
                 <span>
-                  P/E <b>{f.pe?.toFixed(1) ?? "—"}</b>
+                  P/E <b>{formatNumber(f.pe, 1)}</b>
                 </span>
                 <span>
-                  RoE <b>{f.roe ? `${f.roe.toFixed(1)}%` : "—"}</b>
+                  RoE <b>{formatNumber(f.roe, 1, "%")}</b>
                 </span>
                 <span>
-                  D/E <b>{f.debt_to_equity?.toFixed(2) ?? "—"}</b>
+                  D/E <b>{formatNumber(f.debt_to_equity, 2)}</b>
                 </span>
                 <span>
-                  Yield <b>{f.dividend_yield ? `${f.dividend_yield.toFixed(2)}%` : "—"}</b>
+                  Yield <b>{formatNumber(f.dividend_yield, 2, "%")}</b>
                 </span>
                 <span>
                   Mcap <b>{formatCrore(f.market_cap_cr)}</b>
@@ -416,7 +418,7 @@ function PersonaPanel({ persona, onChange }: { persona: PersonaView | null; onCh
               {persona.rules.map((r, i) => (
                 <div key={i} className="fact">
                   <code style={{ fontSize: 12.5 }}>
-                    {r.field.replace(/_/g, " ")} {r.op} {r.value}
+                    {r.field.replace(/_/g, " ")} {r.op} {formatNumber(r.value, 2)}
                   </code>
                 </div>
               ))}
@@ -433,10 +435,10 @@ function PersonaPanel({ persona, onChange }: { persona: PersonaView | null; onCh
             <div className="weight" key={factor}>
               <div className="label">
                 <span>{factor}</span>
-                <span>{weight.toFixed(2)}</span>
+                <span>{formatNumber(weight, 2)}</span>
               </div>
               <div className="bar">
-                <div style={{ width: `${Math.round(weight * 100)}%` }} />
+                <div style={{ width: `${Math.round((num(weight) ?? 0) * 100)}%` }} />
               </div>
             </div>
           ))}
