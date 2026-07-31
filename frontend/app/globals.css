@@ -884,21 +884,23 @@ textarea:focus {
   text-align: center;
   animation: rise 420ms var(--ease);
 }
+/* The subtitle is deliberately narrower than the heading so it nests inside
+   it. Set equal or wider, its first line starts left of the heading's first
+   character and the two centred blocks fight each other — which is exactly
+   what reads as misalignment. `balance` then spreads the words evenly rather
+   than leaving a short orphan on the last line. */
 .login-card > p {
-  margin-left: auto;
-  margin-right: auto;
-  max-width: 392px;
-  /* Distributes words evenly across the lines instead of leaving a short
-     orphan on the last one, which is what makes centred copy look ragged. */
+  margin: 0 auto 26px;
+  max-width: 348px;
   text-wrap: balance;
 }
-/* The feature list stays left-aligned inside a centred block — centring
-   multi-line body copy makes it markedly harder to read.
-   Full card width on purpose: at a narrower measure its left edge sits
-   inside the button's, and two near-but-not-quite aligned edges read as a
-   mistake. */
+
+/* Everything below the copy shares the card's full width, so the feature
+   icons and the button sit on one left edge. Two near-but-not-equal edges
+   read as a mistake; one shared edge reads as a decision. */
 .login-features {
   text-align: left;
+  width: 100%;
 }
 .feature-text {
   text-wrap: pretty; /* avoids a single trailing word on its own line */
@@ -917,6 +919,7 @@ textarea:focus {
   margin: 0 0 10px;
   line-height: 1.22;
   text-wrap: balance;
+  max-width: 100%;
 }
 .login-card > p {
   color: var(--text-tertiary);
