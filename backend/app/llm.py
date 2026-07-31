@@ -29,7 +29,7 @@ from typing import Any
 import httpx
 from tenacity import (
     AsyncRetrying,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -63,7 +63,7 @@ DEFAULT_MODELS = {
 FALLBACK_MODELS = {
     "gemini": [
         "gemini-flash-latest",
-        "gemini-2.5-flash",
+        "gemini-flash-lite-latest",
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite",
     ],
@@ -77,6 +77,9 @@ def _model_chain(provider: str, preferred: str) -> list[str]:
     chain = [preferred] + [m for m in FALLBACK_MODELS.get(provider, []) if m != preferred]
     return chain
 
+
+# Structured extraction needs room for the model's reasoning *and* the JSON.
+JSON_TOKEN_BUDGET = 8000
 
 DEFAULT_EMBED_MODELS = {
     # gemini-embedding-001 is natively 3072-dim and supports Matryoshka
@@ -118,6 +121,19 @@ class Completion:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
+def _worth_retrying(exc: BaseException) -> bool:
+    """Whether another attempt at the same request could succeed.
+
+    Rate limiting is excluded on purpose: `_complete_once` already walks every
+    model in the provider's chain before raising, so this exception means all
+    of them refused. Retrying repeats a known-failed request — on a four-model
+    chain that is sixteen wasted calls to learn nothing.
+    """
+    if isinstance(exc, LLMRateLimited):
+        return False
+    return isinstance(exc, LLMError | httpx.TransportError)
+
+
 def _retry_policy(interactive: bool) -> AsyncRetrying:
     """Retry budget, chosen by who is waiting.
 
@@ -129,13 +145,7 @@ def _retry_policy(interactive: bool) -> AsyncRetrying:
     """
     attempts, longest_wait = (2, 4) if interactive else (4, 30)
     return AsyncRetrying(
-        # Rate limiting is deliberately excluded. `_complete_once` already
-        # walks every model in the provider's chain before raising, so a
-        # LLMRateLimited here means all of them are exhausted — retrying the
-        # whole chain just repeats a known-failed request N more times, which
-        # on four models is sixteen wasted calls and sixteen seconds.
-        retry=retry_if_exception_type((LLMError, httpx.TransportError))
-        & ~retry_if_exception_type(LLMRateLimited),
+        retry=retry_if_exception(_worth_retrying),
         stop=stop_after_attempt(attempts),
         wait=wait_exponential(multiplier=2, min=1, max=longest_wait),
         reraise=True,
@@ -202,6 +212,15 @@ async def _complete_once(
         except LLMRateLimited as exc:
             log.warning("%s rate-limited, trying next model", model)
             last = exc
+        except LLMError as exc:
+            # A 404 or 503 is about this model, not the request — model
+            # availability differs per key and shifts over time. Anything else
+            # would fail identically on a sibling, so it propagates.
+            if any(code in str(exc) for code in (" 404:", " 503:")):
+                log.warning("%s unavailable (%s), trying next model", model, str(exc)[:60])
+                last = LLMRateLimited(str(exc))
+                continue
+            raise
     raise last or LLMError("no model available")
 
 
@@ -218,14 +237,17 @@ async def _gemini_complete(
     }
     if json_mode:
         generation["responseMimeType"] = "application/json"
-        # Gemini 2.5 reasons before answering by default, and those thinking
-        # tokens are drawn from maxOutputTokens. For structured extraction the
-        # budget was spent reasoning and the JSON came back truncated — it
-        # parsed as far as the opening brace and then failed, so sentiment
-        # tagging and persona extraction both returned nothing without ever
-        # raising. Disabled here because schema-filling needs no deliberation;
-        # the conversational path keeps it.
-        generation["thinkingConfig"] = {"thinkingBudget": 0}
+        # Gemini reasons before answering and draws those thinking tokens from
+        # maxOutputTokens, so a tight budget is spent deliberating and the JSON
+        # arrives truncated — it parses as far as the opening brace and then
+        # fails, which is how sentiment tagging and persona extraction both
+        # returned nothing without ever raising.
+        #
+        # Setting thinkingBudget to 0 fixes that on the models that accept it,
+        # but not every model does — some reject the field outright with a 400,
+        # and which ones varies by key. Widening the budget achieves the same
+        # result everywhere: thinking and the response both fit.
+        generation["maxOutputTokens"] = max(max_tokens, JSON_TOKEN_BUDGET)
 
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
