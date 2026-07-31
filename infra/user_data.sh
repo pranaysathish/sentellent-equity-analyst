@@ -245,8 +245,16 @@ if aws s3 ls "s3://${frontend_bucket}/frontend/index.html" --region "$AWS_REGION
   aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --exact-timestamps --only-show-errors
 
   if [ -f /var/www/html/index.html ] && [ -f /var/www/html/dashboard/index.html ]; then
-    # Pass 2: prune what the new build no longer references.
-    aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/       --region "$AWS_REGION" --exact-timestamps --delete --only-show-errors
+    # Pass 2: prune, but never the hashed assets.
+    #
+    # A page already open in a browser holds HTML naming the previous build's
+    # chunks. Deleting those the moment a new build lands turns every open tab
+    # into a ChunkLoadError against a 404. Their names contain a content hash,
+    # so keeping them costs a few hundred KB and cannot collide with anything.
+    aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/       --region "$AWS_REGION" --exact-timestamps --delete       --exclude "_next/static/*" --only-show-errors
+
+    # Old builds are swept once they are far past any live session.
+    find /var/www/html/_next/static -type f -mtime +3 -delete 2>/dev/null || true
     chmod -R a+rX /var/www/html
     docker compose exec -T edge nginx -s reload 2>/dev/null || true
     echo "frontend published"
