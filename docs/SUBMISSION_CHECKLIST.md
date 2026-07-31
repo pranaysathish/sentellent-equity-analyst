@@ -20,7 +20,7 @@ Live URL: `https://rnfl1abgkf.execute-api.ap-south-1.amazonaws.com`
 | Fundamentals: screener.in or equivalent | ✅ | `sources.fetch_fundamentals` |
 | *"store NSE & BSE IDs per stock"* | ✅ | `stocks.nse_id`, `stocks.bse_id` |
 | News: Indian financial RSS | ✅ | ET, Moneycontrol, Mint, Business Standard |
-| Prices: NSE India / yfinance `.NS` | ⚠️ | Implemented; Yahoo blocks AWS IPs — see Known Gaps |
+| Prices: NSE India / yfinance `.NS` | ✅ | `.NS` tickers via Yahoo's chart endpoint |
 | Cloud: AWS | ✅ | EC2, RDS, API Gateway, S3, ECR, VPC, IAM, CloudWatch |
 | GCP for OAuth login only | ✅ | No Gmail/Calendar scopes requested |
 | Terraform | ✅ | 11 files, ~55 resources |
@@ -86,7 +86,7 @@ the hard part and the thing the brief explicitly grades.
 
 ## Known gaps — state these honestly
 
-**1-year returns and momentum are blank.** yfinance is implemented and works
+**Price history is live.** Momentum, volatility and drawdown are fetched from Yahoo's chart endpoint for `.NS` tickers, as the brief specifies.
 locally, but Yahoo Finance blocks AWS datacentre IP ranges, so price history
 fails from the server. The code degrades rather than crashing: fundamentals
 still load, and momentum simply carries no weight in scoring. A paid market

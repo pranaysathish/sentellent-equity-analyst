@@ -20,9 +20,6 @@ feedparser==6.0.11
 beautifulsoup4==4.12.3
 lxml==5.3.0
 
-# --- Market data -------------------------------------------------------------
-yfinance==0.2.51
-
 # --- Agent orchestration -----------------------------------------------------
 langgraph==0.2.60
 langchain-core==0.3.28

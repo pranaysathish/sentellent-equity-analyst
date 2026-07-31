@@ -304,48 +304,100 @@ def _parse_screener(ticker: str, html: str, url: str) -> Fundamentals:
 # --------------------------------------------------------------------------- #
 # Prices (yfinance)
 # --------------------------------------------------------------------------- #
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+# Yahoo rate-limits by client, not by network. yfinance's own user-agent is
+# throttled to HTTP 429 from a server, which looked like an IP block and was
+# nearly written off as "Yahoo blocks AWS". The same request with an ordinary
+# browser header returns a full year of closes from the same host, so the
+# endpoint is called directly — which also drops yfinance and pandas from the
+# image, a meaningful saving on a 1 GiB instance.
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
 async def fetch_price_metrics(ticker: str) -> PriceMetrics | None:
     """Derive momentum and volatility from one year of NSE closes.
 
-    yfinance is synchronous and does blocking I/O, so it runs on a worker
-    thread to keep the event loop free.
+    Returns None on any failure — price history is a scoring input, not a
+    prerequisite, so a bad response degrades momentum to neutral rather than
+    failing the whole ingest.
     """
-    return await asyncio.to_thread(_fetch_price_metrics_sync, ticker)
-
-
-def _fetch_price_metrics_sync(ticker: str) -> PriceMetrics | None:
+    url = f"{YAHOO_CHART_URL}/{ticker.upper()}.NS"
     try:
-        import yfinance as yf
-
-        hist = yf.Ticker(f"{ticker.upper()}.NS").history(period="1y", interval="1d")
-    except Exception as exc:  # noqa: BLE001 - third-party surface is broad
-        log.warning("yfinance failed for %s: %s", ticker, exc)
+        async with httpx.AsyncClient(
+            timeout=settings.ingest_http_timeout,
+            headers={"User-Agent": _BROWSER_UA, "Accept": "application/json"},
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(url, params={"range": "1y", "interval": "1d"})
+        if resp.status_code != 200:
+            log.warning("yahoo returned %s for %s", resp.status_code, ticker)
+            return None
+        payload = resp.json()
+    except Exception as exc:  # noqa: BLE001 - network and JSON surface is broad
+        log.warning("price fetch failed for %s: %s", ticker, exc)
         return None
 
-    if hist is None or hist.empty or "Close" not in hist:
+    try:
+        result = payload["chart"]["result"][0]
+        raw = result["indicators"]["quote"][0]["close"]
+    except (KeyError, IndexError, TypeError):
+        log.warning("unexpected yahoo payload shape for %s", ticker)
         return None
 
-    closes = hist["Close"].dropna()
+    # Holidays and halts come back as nulls; drop them rather than
+    # interpolating, since a gap is not a price.
+    closes = [float(c) for c in raw if c is not None]
     if len(closes) < 20:
         return None
 
-    def trailing_return(days: int) -> float | None:
-        if len(closes) <= days:
-            return None
-        past = float(closes.iloc[-days - 1])
-        return (float(closes.iloc[-1]) / past - 1.0) if past else None
+    return _metrics_from_closes(closes)
 
-    daily = closes.pct_change().dropna()
-    volatility = float(daily.std() * (252**0.5)) if len(daily) > 1 else None
-    running_max = closes.cummax()
-    drawdown = float(((closes - running_max) / running_max).min())
+
+def _metrics_from_closes(closes: list[float]) -> PriceMetrics:
+    """Compute momentum, volatility and drawdown from a close series.
+
+    Split out from the fetch so it is testable without a network call, and
+    written in plain Python because pulling pandas in for four aggregates over
+    250 points is not a trade worth making.
+    """
+    latest = closes[-1]
+
+    def trailing_return(sessions: int) -> float | None:
+        if len(closes) <= sessions:
+            return None
+        past = closes[-sessions - 1]
+        return (latest / past - 1.0) if past else None
+
+    daily = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]
+    volatility = None
+    if len(daily) > 1:
+        mean = sum(daily) / len(daily)
+        variance = sum((d - mean) ** 2 for d in daily) / (len(daily) - 1)
+        volatility = (variance**0.5) * (252**0.5)  # annualised from daily
+
+    peak = closes[0]
+    drawdown = 0.0
+    for price in closes:
+        peak = max(peak, price)
+        if peak:
+            drawdown = min(drawdown, price / peak - 1.0)
 
     return PriceMetrics(
-        last_close=float(closes.iloc[-1]),
+        last_close=latest,
+        # Trading sessions, not calendar days. Each window returns None when
+        # the series is too short rather than measuring over whatever history
+        # happens to exist — a 29-session move reported as a "1-year return"
+        # is a wrong number, and a wrong number is worse than a blank one in a
+        # panel a person makes decisions from. A year of NSE trading is ~245
+        # sessions; 240 allows for holidays without stretching the label.
         return_1m=trailing_return(21),
         return_3m=trailing_return(63),
         return_6m=trailing_return(126),
-        return_1y=trailing_return(min(251, len(closes) - 1)),
+        return_1y=trailing_return(240),
         volatility_1y=volatility,
         drawdown_1y=drawdown,
     )
