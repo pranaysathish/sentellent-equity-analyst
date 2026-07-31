@@ -7,6 +7,7 @@ one migrates, the rest wait and then see the work already recorded.
 
 from __future__ import annotations
 
+import json
 import logging
 import pathlib
 import re
@@ -44,6 +45,30 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
         decoder=_decode_vector,
         format="text",
     )
+
+    # asyncpg hands jsonb back as a raw string unless told otherwise, so every
+    # consumer would have to remember to parse it. They did not: a jsonb array
+    # reached the browser as "[400.75, ...]" and calling .filter() on a string
+    # took the page down. Decoding once here removes a whole class of that.
+    for json_type in ("json", "jsonb"):
+        await conn.set_type_codec(
+            json_type,
+            schema="pg_catalog",
+            encoder=_encode_json,
+            decoder=json.loads,
+            format="text",
+        )
+
+
+def _encode_json(value: Any) -> str:
+    """Serialise a value for a json/jsonb column, once.
+
+    Several call sites pass an already-serialised string, because that was
+    required before this codec existed. Encoding those again would store the
+    JSON *of a JSON string* — valid jsonb, and silently wrong. Passing them
+    through keeps both styles correct.
+    """
+    return value if isinstance(value, str) else json.dumps(value)
 
 
 def _encode_vector(value: Iterable[float]) -> str:

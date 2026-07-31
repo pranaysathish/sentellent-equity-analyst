@@ -4,7 +4,7 @@ import { useEffect, useId, useRef } from "react";
 
 interface Props {
   /** Closing prices, oldest first. */
-  series: number[];
+  series: number[] | string | null | undefined;
   /** Overrides the direction colour; otherwise inferred from first vs last. */
   positive?: boolean;
   height?: number;
@@ -21,6 +21,15 @@ interface Props {
  * length, then the offset animated to zero. The length has to be measured from
  * the rendered DOM, which is why the effect exists.
  */
+function safeParse(value: string): number[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function Sparkline({ series, positive, height = 34 }: Props) {
   const gradientId = useId();
   const pathRef = useRef<SVGPathElement>(null);
@@ -33,7 +42,15 @@ export function Sparkline({ series, positive, height = 34 }: Props) {
     path.style.setProperty("--len", `${length}`);
   }, [series]);
 
-  const clean = series.filter((n) => Number.isFinite(n));
+  // Defensive: a jsonb column can arrive as a JSON *string* if a decoder is
+  // missing, and calling .filter on that throws inside render — which unmounts
+  // the whole tree rather than losing one chart.
+  const raw = Array.isArray(series)
+    ? series
+    : typeof series === "string"
+      ? safeParse(series)
+      : [];
+  const clean = raw.map(Number).filter((n) => Number.isFinite(n));
   if (clean.length < 2) {
     return <div style={{ height }} aria-hidden />;
   }
