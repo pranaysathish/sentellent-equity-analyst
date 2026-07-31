@@ -86,12 +86,6 @@ the hard part and the thing the brief explicitly grades.
 
 ## Known gaps — state these honestly
 
-**Price history is live.** Momentum, volatility and drawdown are fetched from Yahoo's chart endpoint for `.NS` tickers, as the brief specifies.
-locally, but Yahoo Finance blocks AWS datacentre IP ranges, so price history
-fails from the server. The code degrades rather than crashing: fundamentals
-still load, and momentum simply carries no weight in scoring. A paid market
-data API behind the same interface would fix it.
-
 **Debt-to-equity is sometimes blank.** screener.in does not publish it on every
 company's ratio strip. A missing field never excludes a stock from
 recommendations — a data gap is a data gap, not grounds to hide a name.
