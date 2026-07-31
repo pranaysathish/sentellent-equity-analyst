@@ -1,0 +1,25 @@
+# Normalise line endings.
+#
+# Shell scripts and Dockerfiles MUST stay LF: a CRLF-terminated shebang makes
+# Linux fail with an opaque "bad interpreter" error, so a Windows checkout
+# would produce an EC2 instance that never finishes bootstrapping.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.tf        text eol=lf
+*.sql       text eol=lf
+*.py        text eol=lf
+
+# Windows-only files keep CRLF.
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Never touch binaries.
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.zip       binary
+*.pdf       binary

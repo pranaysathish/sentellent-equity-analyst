@@ -1,0 +1,25 @@
+# Copy to `terraform.tfvars` and fill in. That file is gitignored — it holds
+# real secrets and must never be committed.
+
+github_repository = "pranaysathish/sentellent-equity-analyst"
+
+# From Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs
+google_client_id     = "1234567890-abcdefghijklmnop.apps.googleusercontent.com"
+google_client_secret = "GOCSPX-xxxxxxxxxxxxxxxxxxxx"
+
+# From https://aistudio.google.com/apikey
+google_api_key = "AIzaSy..."
+
+# Where the billing alarm sends mail. AWS sends a confirmation link you must
+# click before the subscription becomes active.
+alert_email = "pranayjsathish2004@gmail.com"
+
+# Email me if estimated spend crosses this many US dollars in a month.
+monthly_budget_usd = 15
+
+# Defaults are fine, override only if you need to:
+# region             = "ap-south-1"
+# instance_type      = "t3.micro"
+# llm_provider       = "gemini"
+# embedding_provider = "gemini"
+# news_refresh_cron  = "0 */6 * * *"

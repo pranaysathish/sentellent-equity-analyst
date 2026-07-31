@@ -1,0 +1,50 @@
+# Local development stack. Production runs a generated equivalent on EC2 —
+# see infra/user_data.sh.
+#
+#   cp backend/.env.example backend/.env   # then fill in
+#   docker compose up --build
+#
+# API   → http://localhost:8000/api/docs
+# UI    → http://localhost:3000  (run `npm run dev` in ./frontend)
+
+name: sentellent
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sentellent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sentellent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides the .env value so the container reaches the db service
+      # rather than the host's localhost.
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/sentellent
+    ports:
+      - "8000:8000"
+    volumes:
+      # Live reload while developing.
+      - ./backend/app:/app/app:ro
+      - ./backend/migrations:/app/migrations:ro
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  pgdata:

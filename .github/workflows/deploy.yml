@@ -1,0 +1,192 @@
+name: Deploy to AWS
+
+# Push to main → live. Authentication is via GitHub OIDC: the workflow presents
+# a short-lived signed token and assumes an IAM role scoped to this repository.
+# There are no AWS access keys stored anywhere in this repo or its settings.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # manual re-deploy without an empty commit
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a deploy mid-flight
+
+permissions:
+  contents: read
+  id-token: write # required to request the OIDC token
+
+jobs:
+  ci:
+    name: Gate on CI
+    uses: ./.github/workflows/ci.yml
+
+  backend:
+    name: Backend → ECR → EC2
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tag
+        id: meta
+        run: echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          # Two tags: an immutable one per commit so any deploy can be traced
+          # back and rolled back to, and `latest` which the host pulls.
+          tags: |
+            ${{ secrets.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+            ${{ secrets.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Roll out to the instance
+        id: rollout
+        # SSM Run Command rather than SSH: no bastion, no open port 22, no key
+        # pair in GitHub secrets. The instance pulls the new image itself.
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy ${{ steps.meta.outputs.tag }}" \
+            --parameters 'commands=["/opt/sentellent/deploy.sh"]' \
+            --timeout-seconds 600 \
+            --query "Command.CommandId" --output text)
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "Dispatched SSM command $COMMAND_ID"
+
+      - name: Wait for rollout
+        run: |
+          for i in $(seq 1 40); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${{ steps.rollout.outputs.command_id }}" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            echo "attempt $i: $STATUS"
+            case "$STATUS" in
+              Success) echo "Rollout complete"; exit 0 ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation \
+                  --command-id "${{ steps.rollout.outputs.command_id }}" \
+                  --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                  --query "StandardErrorContent" --output text
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Timed out waiting for the rollout"
+          exit 1
+
+  frontend:
+    name: Frontend → S3 → CloudFront
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build static export
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: gha-frontend-${{ github.run_id }}
+
+      - name: Sync to S3
+        working-directory: frontend
+        # Hashed asset filenames are immutable, so they get a long cache life.
+        # HTML must not be cached at the edge or users would keep getting the
+        # previous deploy's markup after a release.
+        run: |
+          aws s3 sync out/ "s3://${{ secrets.S3_BUCKET }}/" \
+            --delete \
+            --exclude "*.html" \
+            --cache-control "public,max-age=31536000,immutable"
+
+          aws s3 sync out/ "s3://${{ secrets.S3_BUCKET }}/" \
+            --delete \
+            --exclude "*" --include "*.html" \
+            --cache-control "public,max-age=0,must-revalidate" \
+            --content-type "text/html; charset=utf-8"
+
+      - name: Invalidate CloudFront
+        run: |
+          ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" --output text)
+          echo "Invalidation $ID created"
+
+  verify:
+    name: Verify the live site
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: gha-verify-${{ github.run_id }}
+
+      - name: Health check through CloudFront
+        # The deploy is only green if the public URL actually serves both the
+        # API and the app. Anything less is a deploy that "succeeded" onto a
+        # broken site.
+        run: |
+          URL="https://$(aws cloudfront get-distribution \
+            --id '${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}' \
+            --query 'Distribution.DomainName' --output text)"
+          echo "Checking $URL"
+
+          for i in $(seq 1 20); do
+            if curl -fsS "$URL/api/health/ready" | tee /dev/stderr | grep -q '"status":"ready"'; then
+              echo "API is ready"
+              break
+            fi
+            if [ "$i" = "20" ]; then echo "API never became ready"; exit 1; fi
+            sleep 15
+          done
+
+          curl -fsS "$URL/" | grep -qi "sentellent" \
+            && echo "Frontend is serving" \
+            || { echo "Frontend did not serve expected content"; exit 1; }
+
+          echo "Live at $URL"
+          echo "### Deployed :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **URL:** $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${GITHUB_SHA::12}\`" >> "$GITHUB_STEP_SUMMARY"
