@@ -46,6 +46,9 @@ locals {
 
   database_url = "postgresql://sentellent:${local.db_password}@db:5432/sentellent"
 
+  gh_owner = split("/", var.github_repository)[0]
+  gh_repo  = split("/", var.github_repository)[1]
+
   # The single public address of the application. Everything that needs to
   # know where the app lives — the OAuth redirect URI, the frontend's own
   # base URL, the deploy verification step — derives from this one value, so

@@ -75,8 +75,24 @@ resource "aws_iam_role" "github_actions" {
         }
         # Scoped to this repository specifically. Without this condition any
         # GitHub repo in the world could assume the role.
+        #
+        # Two patterns because GitHub now issues the subject claim with
+        # immutable numeric IDs appended:
+        #
+        #   classic:   repo:owner/name:ref:refs/heads/main
+        #   immutable: repo:owner@1234/name@5678:ref:refs/heads/main
+        #
+        # The IDs survive a rename or transfer, which is the point — they stop
+        # someone claiming a freed-up repository name and inheriting its cloud
+        # trust. A policy written for the classic form alone is rejected with a
+        # bare "Not authorized to perform sts:AssumeRoleWithWebIdentity", which
+        # gives no hint that the claim format is the problem. Both are matched
+        # so this keeps working whichever form GitHub sends.
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:*"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repository}:*",
+            "repo:${local.gh_owner}@*/${local.gh_repo}@*:*",
+          ]
         }
       }
     }]
