@@ -52,6 +52,8 @@ resource "aws_route_table_association" "public" {
 # directly on its public IP — every request has to arrive through CloudFront,
 # which is also the only path that terminates TLS.
 data "aws_ec2_managed_prefix_list" "cloudfront" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
@@ -60,12 +62,27 @@ resource "aws_security_group" "app" {
   description = "Application host: CloudFront-only ingress, unrestricted egress"
   vpc_id      = aws_vpc.main.id
 
+  # API Gateway fetches origins from a broad, changing pool of AWS addresses,
+  # so unlike CloudFront there is no managed prefix list to scope this to.
+  # The real access control is the shared secret header that API Gateway
+  # injects and nginx enforces — a direct request to this IP gets a 403.
   ingress {
-    description     = "HTTP from CloudFront edge locations only"
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
+    description = "HTTP from the API Gateway integration (gated by X-Origin-Token)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  dynamic "ingress" {
+    for_each = var.enable_cloudfront ? [1] : []
+    content {
+      description     = "HTTP from CloudFront edge locations"
+      from_port       = 80
+      to_port         = 80
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+    }
   }
 
   # No SSH rule on purpose. Shell access is via SSM Session Manager, which

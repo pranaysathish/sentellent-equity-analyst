@@ -1,15 +1,20 @@
 output "application_url" {
   description = "The live application. This is the URL to submit."
-  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
+  value       = local.public_base_url
 }
 
 output "oauth_redirect_uri" {
   description = <<-EOT
-    Add this EXACTLY to Google Cloud Console →
-    APIs & Services → Credentials → your OAuth client → Authorised redirect URIs.
+    Add this EXACTLY to Google Cloud Console ->
+    APIs & Services -> Credentials -> your OAuth client -> Authorised redirect URIs.
     Login fails with redirect_uri_mismatch until you do.
   EOT
-  value       = "https://${aws_cloudfront_distribution.main.domain_name}/api/auth/google/callback"
+  value       = "${local.public_base_url}/api/auth/google/callback"
+}
+
+output "front_door" {
+  description = "Which service is serving the public URL."
+  value       = var.enable_cloudfront ? "cloudfront" : "api-gateway"
 }
 
 output "github_actions_role_arn" {
@@ -28,8 +33,8 @@ output "s3_frontend_bucket" {
 }
 
 output "cloudfront_distribution_id" {
-  description = "Set as the CLOUDFRONT_DISTRIBUTION_ID secret in the GitHub repository."
-  value       = aws_cloudfront_distribution.main.id
+  description = "Empty unless CloudFront is enabled."
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].id : ""
 }
 
 output "instance_id" {
@@ -38,7 +43,7 @@ output "instance_id" {
 }
 
 output "instance_public_ip" {
-  description = "Elastic IP of the application host (origin only — not user-facing)."
+  description = "Elastic IP of the application host (origin only - not user-facing)."
   value       = aws_eip.app.public_ip
 }
 
@@ -54,7 +59,7 @@ output "github_secrets_to_set" {
     AWS_REGION                 = var.region
     ECR_REPOSITORY             = aws_ecr_repository.api.repository_url
     S3_BUCKET                  = aws_s3_bucket.frontend.id
-    CLOUDFRONT_DISTRIBUTION_ID = aws_cloudfront_distribution.main.id
     EC2_INSTANCE_ID            = aws_instance.app.id
+    CLOUDFRONT_DISTRIBUTION_ID = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].id : "none"
   }
 }

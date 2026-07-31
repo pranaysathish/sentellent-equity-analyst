@@ -1,0 +1,111 @@
+data.tls_certificate.github: Reading...
+random_password.session_secret: Refreshing state... [id=none]
+random_password.internal_token: Refreshing state... [id=none]
+random_password.origin_token: Refreshing state... [id=none]
+random_password.db: Refreshing state... [id=none]
+data.aws_availability_zones.available: Reading...
+data.aws_ssm_parameter.al2023_ami: Reading...
+aws_cloudwatch_log_group.apigw: Refreshing state... [id=/sentellent/apigateway]
+data.aws_caller_identity.current: Reading...
+aws_ecr_repository.api: Refreshing state... [id=sentellent-api]
+aws_vpc.main: Refreshing state... [id=vpc-0e5d3f6a453d96c70]
+aws_iam_role.app: Refreshing state... [id=sentellent-app-role]
+aws_sns_topic.alerts: Refreshing state... [id=arn:aws:sns:ap-south-1:312392183049:sentellent-alerts]
+data.aws_caller_identity.current: Read complete after 0s [id=312392183049]
+aws_cloudwatch_log_group.app: Refreshing state... [id=/sentellent/app]
+data.aws_ssm_parameter.al2023_ami: Read complete after 0s [id=/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64]
+aws_ssm_parameter.app_env["DATABASE_URL"]: Refreshing state... [id=/sentellent/DATABASE_URL]
+data.aws_availability_zones.available: Read complete after 0s [id=ap-south-1]
+aws_ssm_parameter.app_env["GOOGLE_CLIENT_SECRET"]: Refreshing state... [id=/sentellent/GOOGLE_CLIENT_SECRET]
+aws_ssm_parameter.app_env["SESSION_SECRET"]: Refreshing state... [id=/sentellent/SESSION_SECRET]
+aws_ssm_parameter.app_env["POSTGRES_PASSWORD"]: Refreshing state... [id=/sentellent/POSTGRES_PASSWORD]
+aws_ssm_parameter.app_env["INTERNAL_REFRESH_TOKEN"]: Refreshing state... [id=/sentellent/INTERNAL_REFRESH_TOKEN]
+aws_ssm_parameter.app_env["GOOGLE_API_KEY"]: Refreshing state... [id=/sentellent/GOOGLE_API_KEY]
+aws_ssm_parameter.app_env["GOOGLE_CLIENT_ID"]: Refreshing state... [id=/sentellent/GOOGLE_CLIENT_ID]
+aws_apigatewayv2_api.main: Refreshing state... [id=rnfl1abgkf]
+aws_s3_bucket.frontend: Refreshing state... [id=sentellent-frontend-312392183049]
+aws_sns_topic_subscription.email: Refreshing state... [id=arn:aws:sns:ap-south-1:312392183049:sentellent-alerts:1876826a-5ea0-4527-b11e-490632629b47]
+aws_ecr_lifecycle_policy.api: Refreshing state... [id=sentellent-api]
+aws_apigatewayv2_stage.default: Refreshing state... [id=$default]
+aws_internet_gateway.main: Refreshing state... [id=igw-0b16f9f0c30efaa0b]
+aws_subnet.public: Refreshing state... [id=subnet-0a8d4c9898d4c4562]
+aws_security_group.app: Refreshing state... [id=sg-0a570feeadcfad6ee]
+aws_route_table.public: Refreshing state... [id=rtb-0fd88df16e3a01358]
+data.tls_certificate.github: Read complete after 0s [id=f14a3ee4f847b00a69e565d9b60917218c94d428]
+aws_iam_openid_connect_provider.github: Refreshing state... [id=arn:aws:iam::312392183049:oidc-provider/token.actions.githubusercontent.com]
+aws_route_table_association.public: Refreshing state... [id=rtbassoc-0218a899b2c25a2a8]
+aws_sns_topic.billing_alerts: Refreshing state... [id=arn:aws:sns:us-east-1:312392183049:sentellent-billing-alerts]
+aws_s3_bucket_public_access_block.frontend: Refreshing state... [id=sentellent-frontend-312392183049]
+aws_s3_bucket_versioning.frontend: Refreshing state... [id=sentellent-frontend-312392183049]
+aws_s3_bucket_server_side_encryption_configuration.frontend: Refreshing state... [id=sentellent-frontend-312392183049]
+aws_iam_role.github_actions: Refreshing state... [id=sentellent-github-actions]
+aws_sns_topic_subscription.billing_email: Refreshing state... [id=arn:aws:sns:us-east-1:312392183049:sentellent-billing-alerts:f01a0415-fad5-4b03-b463-ac2445c3264c]
+aws_cloudwatch_metric_alarm.billing: Refreshing state... [id=sentellent-estimated-charges]
+aws_iam_role_policy_attachment.ssm_core: Refreshing state... [id=sentellent-app-role-20260731110504145500000001]
+aws_iam_role_policy.app: Refreshing state... [id=sentellent-app-role:sentellent-app-policy]
+aws_iam_instance_profile.app: Refreshing state... [id=sentellent-app-profile]
+aws_instance.app: Refreshing state... [id=i-057eefbef28571559]
+aws_eip.app: Refreshing state... [id=eipalloc-028b5f8e0adcd2d98]
+aws_cloudwatch_metric_alarm.instance_health: Refreshing state... [id=sentellent-instance-unhealthy]
+aws_iam_role_policy.github_actions: Refreshing state... [id=sentellent-github-actions:sentellent-github-actions-policy]
+aws_apigatewayv2_integration.app: Refreshing state... [id=oyo9akg]
+aws_ssm_parameter.app_config["EMBEDDING_PROVIDER"]: Refreshing state... [id=/sentellent/EMBEDDING_PROVIDER]
+aws_ssm_parameter.app_config["LLM_MODEL"]: Refreshing state... [id=/sentellent/LLM_MODEL]
+aws_ssm_parameter.app_config["EMBEDDING_MODEL"]: Refreshing state... [id=/sentellent/EMBEDDING_MODEL]
+aws_ssm_parameter.app_config["OAUTH_REDIRECT_URI"]: Refreshing state... [id=/sentellent/OAUTH_REDIRECT_URI]
+aws_ssm_parameter.app_config["ENVIRONMENT"]: Refreshing state... [id=/sentellent/ENVIRONMENT]
+aws_ssm_parameter.app_config["FRONTEND_BASE_URL"]: Refreshing state... [id=/sentellent/FRONTEND_BASE_URL]
+aws_ssm_parameter.app_config["LLM_PROVIDER"]: Refreshing state... [id=/sentellent/LLM_PROVIDER]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+  ~ update in-place
+
+Terraform will perform the following actions:
+
+  # aws_apigatewayv2_integration.app will be updated in-place
+  ~ resource "aws_apigatewayv2_integration" "app" {
+        id                                        = "oyo9akg"
+      ~ integration_uri                           = "http://13.207.142.0/{proxy}" -> "http://13.207.142.0"
+        # (16 unchanged attributes hidden)
+    }
+
+  # aws_apigatewayv2_route.default will be created
+  + resource "aws_apigatewayv2_route" "default" {
+      + api_id             = "rnfl1abgkf"
+      + api_key_required   = false
+      + authorization_type = "NONE"
+      + id                 = (known after apply)
+      + route_key          = "$default"
+      + target             = "integrations/oyo9akg"
+    }
+
+Plan: 1 to add, 1 to change, 0 to destroy.
+aws_apigatewayv2_integration.app: Modifying... [id=oyo9akg]
+aws_apigatewayv2_integration.app: Modifications complete after 0s [id=oyo9akg]
+aws_apigatewayv2_route.default: Creating...
+aws_apigatewayv2_route.default: Creation complete after 0s [id=yfx21x8]
+
+Apply complete! Resources: 1 added, 1 changed, 0 destroyed.
+
+Outputs:
+
+application_url = "https://rnfl1abgkf.execute-api.ap-south-1.amazonaws.com"
+cloudfront_distribution_id = ""
+ecr_repository_url = "312392183049.dkr.ecr.ap-south-1.amazonaws.com/sentellent-api"
+front_door = "api-gateway"
+github_actions_role_arn = "arn:aws:iam::312392183049:role/sentellent-github-actions"
+github_secrets_to_set = {
+  "AWS_REGION" = "ap-south-1"
+  "AWS_ROLE_ARN" = "arn:aws:iam::312392183049:role/sentellent-github-actions"
+  "CLOUDFRONT_DISTRIBUTION_ID" = "none"
+  "EC2_INSTANCE_ID" = "i-057eefbef28571559"
+  "ECR_REPOSITORY" = "312392183049.dkr.ecr.ap-south-1.amazonaws.com/sentellent-api"
+  "S3_BUCKET" = "sentellent-frontend-312392183049"
+}
+instance_id = "i-057eefbef28571559"
+instance_public_ip = "13.207.142.0"
+oauth_redirect_uri = "https://rnfl1abgkf.execute-api.ap-south-1.amazonaws.com/api/auth/google/callback"
+s3_frontend_bucket = "sentellent-frontend-312392183049"
+ssm_session_command = "aws ssm start-session --target i-057eefbef28571559 --region ap-south-1"

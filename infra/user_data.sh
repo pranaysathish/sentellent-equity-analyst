@@ -40,8 +40,15 @@ if [ ! -x "$DOCKER_CLI_PLUGINS/docker-compose" ]; then
   chmod +x "$DOCKER_CLI_PLUGINS/docker-compose"
 fi
 
-mkdir -p /opt/sentellent
+mkdir -p /opt/sentellent /var/www/html
 cd /opt/sentellent
+
+if [ ! -f /var/www/html/index.html ]; then
+  echo '<!doctype html><meta charset="utf-8"><title>Sentellent</title>
+<body style="font-family:system-ui;background:#0b0f14;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><h1>Sentellent Equity Analyst</h1>
+<p style="color:#8b98a9">Deploying — the application will appear here shortly.</p></div>'     > /var/www/html/index.html
+fi
 
 # --------------------------------------------------------------------------- #
 # Configuration is pulled from Parameter Store at boot rather than baked into
@@ -134,6 +141,7 @@ services:
       - "80:80"
     volumes:
       - /opt/sentellent/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/www/html:/usr/share/nginx/html:ro
 
 volumes:
   pgdata:
@@ -147,14 +155,36 @@ server {
     server_name _;
 
     client_max_body_size 2m;
+    root /usr/share/nginx/html;
+    index index.html;
 
-    # CloudFront checks this; it must not depend on the API being up.
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Liveness for the instance itself. Deliberately exempt from the origin
+    # check so it can be probed locally during a deploy.
     location = /edge-health {
         access_log off;
-        return 200 "edge ok\n";
+        return 200 "edge ok";
+    }
+
+    # Everything reaching this instance should have come through API Gateway,
+    # which stamps this header. A request straight to the public IP has no
+    # such header and is refused — the security group cannot express this,
+    # because API Gateway egress IPs are not a fixed range.
+    location / {
+        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
+            return 403;
+        }
+        try_files $uri $uri/index.html $uri.html /index.html;
     }
 
     location /api/ {
+        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
+            return 403;
+        }
+
         proxy_pass         http://api:8000;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
@@ -168,12 +198,22 @@ server {
         proxy_send_timeout    120s;
     }
 
-    location / {
-        return 404 '{"detail":"Not found. The UI is served by CloudFront."}';
-        add_header Content-Type application/json always;
+    # Hashed asset filenames are immutable; HTML must always revalidate so a
+    # deploy is picked up immediately.
+    location /_next/static/ {
+        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
+            return 403;
+        }
+        expires 1y;
+        add_header Cache-Control "public, immutable";
     }
 }
 NGINX
+
+# The token is templated in by Terraform rather than written into the file
+# above, so the literal secret never appears in a heredoc that also contains
+# nginx variables.
+sed -i "s|ORIGIN_TOKEN_PLACEHOLDER|${origin_token}|g" /opt/sentellent/nginx.conf
 
 # --------------------------------------------------------------------------- #
 # Deploy helper. Also invoked by CI through SSM Run Command.
@@ -192,13 +232,33 @@ aws ecr get-login-password --region "$AWS_REGION" \
 docker compose pull
 docker compose up -d --remove-orphans
 docker image prune -f
+
+# Refresh the static frontend that CI published to S3. Kept in the same
+# script so one SSM call deploys both halves atomically enough for a
+# single-instance deployment.
+mkdir -p /var/www/html
+if aws s3 ls "s3://${frontend_bucket}/frontend/" --region "$AWS_REGION" >/dev/null 2>&1; then
+  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --delete
+  chmod -R a+rX /var/www/html
+  docker compose exec -T edge nginx -s reload 2>/dev/null || true
+else
+  echo "no frontend build in S3 yet; skipping"
+fi
 DEPLOY
 chmod +x /opt/sentellent/deploy.sh
 
 # The very first boot races CI: the ECR image may not exist yet. Failing here
 # would leave the box half-configured, so a miss is tolerated and the next
 # deploy picks it up.
-/opt/sentellent/deploy.sh || echo "initial deploy skipped: image not published yet"
+# On a first boot the ECR image does not exist yet, so the full deploy will
+# fail. That must not leave the host with nothing listening on port 80 — the
+# public URL would return 503 instead of a holding page, and there would be no
+# way to tell "still deploying" apart from "broken". Bring up the database and
+# the edge regardless; CI supplies the API container moments later.
+if ! /opt/sentellent/deploy.sh; then
+  echo "initial deploy incomplete (API image not published yet)"
+  docker compose up -d db edge || true
+fi
 
 # --------------------------------------------------------------------------- #
 # Scheduled news + sentiment refresh.

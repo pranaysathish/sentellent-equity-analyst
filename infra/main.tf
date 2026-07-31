@@ -45,6 +45,19 @@ locals {
   db_password = var.db_password != "" ? var.db_password : random_password.db.result
 
   database_url = "postgresql://sentellent:${local.db_password}@db:5432/sentellent"
+
+  # The single public address of the application. Everything that needs to
+  # know where the app lives — the OAuth redirect URI, the frontend's own
+  # base URL, the deploy verification step — derives from this one value, so
+  # switching front doors is a one-line change.
+  # API Gateway returns its invoke URL with a trailing slash; left in, every
+  # derived URL would contain a double slash ("...amazonaws.com//api/...")
+  # and the OAuth redirect would not match what Google has registered.
+  public_base_url = var.enable_cloudfront ? (
+    "https://${aws_cloudfront_distribution.main[0].domain_name}"
+    ) : (
+    trimsuffix(aws_apigatewayv2_stage.default.invoke_url, "/")
+  )
 }
 
 resource "random_password" "db" {

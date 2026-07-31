@@ -120,7 +120,7 @@ resource "aws_iam_role_policy" "github_actions" {
         Sid      = "InvalidateCache"
         Effect   = "Allow"
         Action   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"]
-        Resource = aws_cloudfront_distribution.main.arn
+        Resource = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].arn : "*"
       },
       {
         Sid    = "TriggerDeploy"

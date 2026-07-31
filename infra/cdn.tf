@@ -36,6 +36,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
 # Origin Access Control keeps the bucket private: only this distribution can
 # read it, so there is no public bucket to misconfigure.
 resource "aws_cloudfront_origin_access_control" "frontend" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name                              = "${local.name}-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
@@ -43,6 +45,8 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 resource "aws_s3_bucket_policy" "frontend" {
+  count = var.enable_cloudfront ? 1 : 0
+
   bucket = aws_s3_bucket.frontend.id
 
   policy = jsonencode({
@@ -55,7 +59,7 @@ resource "aws_s3_bucket_policy" "frontend" {
       Resource  = "${aws_s3_bucket.frontend.arn}/*"
       Condition = {
         StringEquals = {
-          "AWS:SourceArn" = aws_cloudfront_distribution.main.arn
+          "AWS:SourceArn" = aws_cloudfront_distribution.main[0].arn
         }
       }
     }]
@@ -66,6 +70,8 @@ resource "aws_s3_bucket_policy" "frontend" {
 # `/dashboard/`. S3 only resolves index documents for website endpoints, which
 # OAC does not use — so the rewrite happens at the edge instead.
 resource "aws_cloudfront_function" "rewrite_index" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name    = "${local.name}-rewrite-index"
   runtime = "cloudfront-js-2.0"
   comment = "Map directory-style paths to their index.html object"
@@ -87,18 +93,26 @@ resource "aws_cloudfront_function" "rewrite_index" {
 }
 
 data "aws_cloudfront_cache_policy" "optimized" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name = "Managed-CachingOptimized"
 }
 
 data "aws_cloudfront_cache_policy" "disabled" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name = "Managed-CachingDisabled"
 }
 
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
+  count = var.enable_cloudfront ? 1 : 0
+
   name = "Managed-AllViewerExceptHostHeader"
 }
 
 resource "aws_cloudfront_distribution" "main" {
+  count = var.enable_cloudfront ? 1 : 0
+
   enabled             = true
   comment             = "${local.name} — SPA and API"
   default_root_object = "index.html"
@@ -107,7 +121,7 @@ resource "aws_cloudfront_distribution" "main" {
   origin {
     origin_id                = "s3-frontend"
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
-    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
   }
 
   origin {
@@ -129,11 +143,11 @@ resource "aws_cloudfront_distribution" "main" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized[0].id
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.rewrite_index.arn
+      function_arn = aws_cloudfront_function.rewrite_index[0].arn
     }
   }
 
@@ -147,8 +161,8 @@ resource "aws_cloudfront_distribution" "main" {
 
     # API responses are per-user and must never be cached; the origin request
     # policy forwards cookies, headers and query strings so sessions work.
-    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled[0].id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer[0].id
   }
 
   restrictions {

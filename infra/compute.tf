@@ -36,8 +36,8 @@ resource "aws_ssm_parameter" "app_config" {
     EMBEDDING_PROVIDER = var.embedding_provider
     LLM_MODEL          = var.llm_model
     EMBEDDING_MODEL    = var.embedding_model
-    FRONTEND_BASE_URL  = "https://${aws_cloudfront_distribution.main.domain_name}"
-    OAUTH_REDIRECT_URI = "https://${aws_cloudfront_distribution.main.domain_name}/api/auth/google/callback"
+    FRONTEND_BASE_URL  = local.public_base_url
+    OAUTH_REDIRECT_URI = "${local.public_base_url}/api/auth/google/callback"
   }
 
   name  = "/${local.name}/${each.key}"
@@ -86,16 +86,31 @@ resource "aws_iam_role_policy" "app" {
         Resource = "*"
       },
       {
-        Sid      = "ReadOwnConfiguration"
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
-        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${local.name}/*"
+        Sid    = "ReadOwnConfiguration"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+        # Two ARNs, not one: GetParametersByPath authorises against the *path*
+        # ("parameter/sentellent"), while GetParameter authorises against each
+        # individual parameter ("parameter/sentellent/DATABASE_URL"). Granting
+        # only the wildcard form denies the path call.
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${local.name}",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${local.name}/*",
+        ]
       },
       {
         Sid      = "WriteLogs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
         Resource = "${aws_cloudwatch_log_group.app.arn}:*"
+      },
+      {
+        # Without CloudFront, the instance serves the frontend itself, so it
+        # pulls the built files that CI publishes to S3.
+        Sid      = "ReadFrontendBuild"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.frontend.arn, "${aws_s3_bucket.frontend.arn}/*"]
       },
     ]
   })
@@ -128,6 +143,8 @@ resource "aws_instance" "app" {
     ecr_repository    = aws_ecr_repository.api.repository_url
     log_group         = aws_cloudwatch_log_group.app.name
     news_refresh_cron = var.news_refresh_cron
+    frontend_bucket   = aws_s3_bucket.frontend.id
+    origin_token      = random_password.origin_token.result
   })
 
   # Secrets must exist before the host boots and reads them. Only `app_env` is

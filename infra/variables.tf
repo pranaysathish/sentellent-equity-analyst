@@ -117,6 +117,23 @@ variable "monthly_budget_usd" {
   default     = 15
 }
 
+variable "enable_cloudfront" {
+  description = <<-EOT
+    Serve the app through CloudFront instead of API Gateway.
+
+    CloudFront is the better front door — edge caching, cheaper at volume —
+    but AWS blocks distribution creation on unverified new accounts with
+    "your account must be verified before you can add new CloudFront
+    resources", which only Support can lift.
+
+    API Gateway provides the same trusted HTTPS endpoint with no such gate,
+    so it is the default. Flip this to true once Support verifies the
+    account; `public_base_url` follows automatically.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "news_refresh_cron" {
   description = "Schedule for the news/sentiment refresh job (UTC). Default: every 6 hours."
   type        = string
