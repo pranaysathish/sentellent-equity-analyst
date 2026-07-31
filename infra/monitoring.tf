@@ -15,6 +15,21 @@ resource "aws_sns_topic_subscription" "email" {
   # AWS emails a confirmation link; the subscription is inactive until clicked.
 }
 
+# A CloudWatch alarm can only notify an SNS topic in its *own* region, and
+# billing metrics exist solely in us-east-1 — so the billing alarm needs a
+# topic there. The regional topic above serves every other alarm.
+resource "aws_sns_topic" "billing_alerts" {
+  provider = aws.us_east_1
+  name     = "${local.name}-billing-alerts"
+}
+
+resource "aws_sns_topic_subscription" "billing_email" {
+  provider  = aws.us_east_1
+  topic_arn = aws_sns_topic.billing_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 # Billing metrics are only published in us-east-1, regardless of where the
 # resources actually live — hence the aliased provider.
 resource "aws_cloudwatch_metric_alarm" "billing" {
@@ -32,7 +47,7 @@ resource "aws_cloudwatch_metric_alarm" "billing" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
+  alarm_actions = [aws_sns_topic.billing_alerts.arn]
 }
 
 # A second signal: if the instance stops responding, the site is down.
