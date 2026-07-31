@@ -51,3 +51,7 @@ Thumbs.db
 *.sqlite3
 /tmp/
 scratch/
+
+# Terraform run logs are build artefacts, not source.
+infra/apply*.log
+*.tfplan.zip
