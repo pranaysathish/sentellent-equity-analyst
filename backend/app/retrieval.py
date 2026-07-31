@@ -61,7 +61,7 @@ async def retrieve(
     top_k = top_k or settings.retrieval_top_k
     candidate_k = settings.retrieval_candidate_k
 
-    query_vector = (await llm.embed([query]))[0]
+    query_vector = (await llm.embed([query], interactive=True))[0]
     ts_query = _to_tsquery(query)
 
     rows = await db.fetch(

@@ -80,12 +80,14 @@ variable "llm_model" {
   description = <<-EOT
     Chat model id. Blank uses the provider default from app/llm.py.
 
-    Pinned explicitly because model availability varies per API key: on a
-    current Gemini key, gemini-2.0-flash returns 429 while gemini-2.5-flash
-    serves normally.
+    Pinned explicitly because availability and quota vary per model, not
+    just per key. On the free tier each model carries its own daily request
+    allowance — gemini-2.5-flash permits 20 requests per project per day,
+    which a single afternoon of testing exhausts. Switching models buys a
+    fresh allowance; enabling billing removes the ceiling.
   EOT
   type        = string
-  default     = "gemini-2.5-flash"
+  default     = "gemini-flash-latest"
 }
 
 variable "embedding_model" {

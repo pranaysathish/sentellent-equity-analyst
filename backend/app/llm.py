@@ -28,7 +28,7 @@ from typing import Any
 
 import httpx
 from tenacity import (
-    retry,
+    AsyncRetrying,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -45,7 +45,7 @@ OPENAI_EMBED_URL = "https://api.openai.com/v1/embeddings"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 DEFAULT_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-flash-latest",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-opus-5",
 }
@@ -84,34 +84,56 @@ class LLMRateLimited(LLMError):
     """The provider is throttling. Distinct because it needs a longer wait."""
 
 
-_retry = retry(
-    retry=retry_if_exception_type((LLMError, httpx.TransportError)),
-    stop=stop_after_attempt(4),
-    # Rate limits are usually enforced per minute, so a wait that tops out at
-    # eight seconds retries straight back into the same window and burns the
-    # remaining attempts for nothing. This reaches ~30s by the final try.
-    wait=wait_exponential(multiplier=2, min=2, max=30),
-    reraise=True,
-)
+def _retry_policy(interactive: bool) -> AsyncRetrying:
+    """Retry budget, chosen by who is waiting.
+
+    Background work (ingestion, tagging) can afford to sit out a rate-limit
+    window, so it retries patiently. A chat request cannot: API Gateway ends
+    the request at 30 seconds, so a long backoff spends the user's entire
+    budget waiting and returns 503 — a worse outcome than failing fast with a
+    message that says what happened and that retrying will work.
+    """
+    attempts, longest_wait = (2, 4) if interactive else (4, 30)
+    return AsyncRetrying(
+        retry=retry_if_exception_type((LLMError, httpx.TransportError)),
+        stop=stop_after_attempt(attempts),
+        wait=wait_exponential(multiplier=2, min=1, max=longest_wait),
+        reraise=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Chat completion
 # --------------------------------------------------------------------------- #
-@_retry
 async def complete(
     system: str,
     messages: Sequence[Message],
     *,
     json_mode: bool = False,
     max_tokens: int | None = None,
+    interactive: bool = False,
 ) -> Completion:
     """Single-turn-or-multi-turn completion, provider-agnostic.
 
     `json_mode` asks the provider for strict JSON where it supports a native
     switch, and falls back to prompt instruction plus extraction where it
     does not. Callers should still parse defensively via `parse_json`.
+
+    Set `interactive` when a user is waiting on the response, so the retry
+    budget stays inside the API gateway's request timeout.
     """
+    async for attempt in _retry_policy(interactive):
+        with attempt:
+            return await _complete_once(system, messages, json_mode, max_tokens)
+    raise LLMError("retry policy exhausted without result")  # unreachable
+
+
+async def _complete_once(
+    system: str,
+    messages: Sequence[Message],
+    json_mode: bool,
+    max_tokens: int | None,
+) -> Completion:
     provider = settings.llm_provider
     model = settings.llm_model or DEFAULT_MODELS.get(provider, "")
     limit = max_tokens or settings.llm_max_tokens
@@ -298,8 +320,7 @@ def _echo_completion(system: str, messages: Sequence[Message], *, json_mode: boo
 # --------------------------------------------------------------------------- #
 # Embeddings
 # --------------------------------------------------------------------------- #
-@_retry
-async def embed(texts: Sequence[str]) -> list[list[float]]:
+async def embed(texts: Sequence[str], *, interactive: bool = False) -> list[list[float]]:
     """Embed a batch of texts into EMBED_DIM-dimensional unit vectors.
 
     Always returns one vector per input, in order. Callers rely on that for
@@ -308,6 +329,13 @@ async def embed(texts: Sequence[str]) -> list[list[float]]:
     if not texts:
         return []
 
+    async for attempt in _retry_policy(interactive):
+        with attempt:
+            return await _embed_once(texts)
+    raise LLMError("retry policy exhausted without result")  # unreachable
+
+
+async def _embed_once(texts: Sequence[str]) -> list[list[float]]:
     provider = settings.embedding_provider
     model = settings.embedding_model or DEFAULT_EMBED_MODELS.get(provider, "")
 

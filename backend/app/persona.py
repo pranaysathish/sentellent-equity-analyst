@@ -120,6 +120,7 @@ async def learn_from_message(user_id: str, message: str) -> bool:
             [llm.Message(role="user", content=message[:4000])],
             json_mode=True,
             max_tokens=2000,
+            interactive=True,
         )
         payload = llm.parse_json(completion.text)
     except (llm.LLMError, llm.LLMRefusal) as exc:

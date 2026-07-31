@@ -191,6 +191,7 @@ async def answer_node(state: AgentState) -> AgentState:
         completion = await llm.complete(
             system,
             _history_messages(state) + [llm.Message(role="user", content=prompt)],
+            interactive=True,
         )
         text = completion.text.strip()
     except llm.LLMRefusal:
