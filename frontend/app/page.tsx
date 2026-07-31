@@ -49,7 +49,7 @@ export default function LoginPage() {
   return (
     <div className="login">
       <div className="login-card">
-        <div className="login-mark">S</div>
+        <img className="login-mark" src="/logo.png" alt="Sentellent" />
 
         <h1>Your equity research chief of staff</h1>
         <p>

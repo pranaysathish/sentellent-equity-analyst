@@ -112,7 +112,9 @@ export default function Dashboard() {
     <>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">S</span>
+          {/* Plain <img>: the export is static, so next/image would only add
+              a wrapper around the same request. */}
+          <img className="brand-mark" src="/logo.png" alt="Sentellent" />
           Sentellent <span className="brand-sub">Equity Analyst</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

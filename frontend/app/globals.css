@@ -256,16 +256,12 @@ textarea:focus {
   letter-spacing: -0.01em;
 }
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--accent) 0%, #8b93e8 100%);
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
+  height: 20px;
+  width: auto;
   flex-shrink: 0;
+  /* The supplied mark is a light grey; nudged brighter so it sits at the same
+     visual weight as the wordmark beside it rather than reading as disabled. */
+  filter: brightness(1.15);
 }
 .brand-sub {
   color: var(--text-tertiary);
@@ -844,17 +840,11 @@ textarea:focus {
   animation: rise 420ms var(--ease);
 }
 .login-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--accent) 0%, #8b93e8 100%);
-  display: grid;
-  place-items: center;
-  font-size: 19px;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 22px;
-  box-shadow: 0 8px 28px rgba(94, 106, 210, 0.28);
+  height: 44px;
+  width: auto;
+  display: block;
+  margin-bottom: 24px;
+  filter: brightness(1.15);
 }
 .login-card h1 {
   font-size: 26px;
