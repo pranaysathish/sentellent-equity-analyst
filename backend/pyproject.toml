@@ -24,4 +24,13 @@ ignore = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Pinned rather than left to the default, which pytest-asyncio warns is
+# changing in a future release.
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore::DeprecationWarning"]
+
+# Put the backend root on sys.path so `import app` resolves however pytest is
+# invoked. `python -m pytest` adds the working directory implicitly and a bare
+# `pytest` does not — without this, the suite passes locally and fails in CI
+# at collection time, which reads as failing tests rather than a broken import.
+pythonpath = ["."]

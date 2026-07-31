@@ -46,7 +46,9 @@ jobs:
         working-directory: backend
         # These cover the pure logic — persona scoring, hard-rule screening,
         # chunking and the article-dedup hashing. No database or API key needed.
-        run: pytest tests -v --tb=short
+        # Invoked via `python -m` so the working directory is importable, which
+        # `pythonpath` in pyproject.toml also guarantees independently.
+        run: python -m pytest tests -v --tb=short
 
   frontend:
     name: Frontend — typecheck & build
@@ -87,6 +89,25 @@ jobs:
     name: Backend image builds
     runs-on: ubuntu-latest
 
+    # The app opens a database pool and runs migrations during startup, so it
+    # cannot boot without Postgres. Giving the smoke test a real pgvector
+    # instance turns it into a genuine integration check: it proves the image
+    # starts, the migrations apply cleanly, and the readiness probe passes.
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sentellent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sentellent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -102,22 +123,41 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke-test the image
-        # Proves the image actually starts and serves traffic. The health
-        # endpoint deliberately does not touch the database, so this works
-        # without any backing services.
+      - name: Smoke-test the image against a real database
         run: |
-          docker run -d --name api -p 8000:8000 \
+          # --network host so the container reaches the service container on
+          # the runner's published port.
+          docker run -d --name api --network host \
             -e ENVIRONMENT=local \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sentellent \
+            -e SESSION_SECRET=ci-smoke-test-secret \
             sentellent-api:ci
-          for i in $(seq 1 20); do
-            if curl -fsS http://localhost:8000/api/health; then
-              echo "\nContainer healthy"
-              docker rm -f api
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/health/ready 2>/dev/null | grep -q '"status":"ready"'; then
+              echo "Container healthy and migrations applied"
+              docker rm -f api >/dev/null
               exit 0
             fi
             sleep 3
           done
-          echo "Container failed to become healthy"
+
+          echo "Container failed to become ready"
           docker logs api
+          docker rm -f api >/dev/null
           exit 1
+
+      - name: Verify migrations created the expected schema
+        # Guards against a migration that "runs" but silently produces nothing —
+        # pgvector in particular fails quietly if the extension is unavailable.
+        run: |
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:16-alpine \
+            psql -h localhost -U postgres -d sentellent -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" \
+            | tee /tmp/count
+          test "$(cat /tmp/count)" -ge 12 || { echo "expected >=12 tables"; exit 1; }
+
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:16-alpine \
+            psql -h localhost -U postgres -d sentellent -tAc \
+            "SELECT extname FROM pg_extension WHERE extname='vector'" | grep -q vector \
+            && echo "pgvector extension present"
