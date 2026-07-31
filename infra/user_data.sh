@@ -177,17 +177,17 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # HTML must never be cached. It names the hashed asset files, so a stale
-    # copy points at chunks a later deploy has removed — which surfaces in the
-    # browser as ChunkLoadError against a 404 rather than as anything
-    # diagnosable.
-    location ~* \.html$ {
-        add_header Cache-Control "no-store, must-revalidate" always;
-    }
-
     # Static export: /dashboard/ is dashboard/index.html on disk. Falling back
     # to /index.html keeps client-side routes working.
+    # HTML must never be cached: it names the hashed asset files, so a stale
+    # copy points at chunks a later deploy has removed.
+    #
+    # The header lives here rather than on a `\.html$` location because the
+    # browser asks for "/" and "/dashboard/", which do not end in .html — the
+    # regex location matched the request URI, not the file served, so it never
+    # applied to the one page it was written for.
     location / {
+        add_header Cache-Control "no-store, must-revalidate" always;
         try_files $uri $uri/index.html $uri.html /index.html;
     }
 }
@@ -235,11 +235,18 @@ if aws s3 ls "s3://${frontend_bucket}/frontend/index.html" --region "$AWS_REGION
   mkdir -p /var/www/html
 
   # Pass 1: add and overwrite. No deletions.
-  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --only-show-errors
+  #
+  # --exact-timestamps is essential, not a tuning flag. By default s3 sync
+  # skips a file when the sizes match and the source is not newer, and Next.js
+  # puts its content hash in asset *filenames* — so index.html changes which
+  # files it references while staying byte-identical in length. The default
+  # comparison skipped it, leaving HTML from one build beside assets from
+  # another and a 404 on the stylesheet.
+  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --exact-timestamps --only-show-errors
 
   if [ -f /var/www/html/index.html ] && [ -f /var/www/html/dashboard/index.html ]; then
     # Pass 2: prune what the new build no longer references.
-    aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/       --region "$AWS_REGION" --delete --only-show-errors
+    aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/       --region "$AWS_REGION" --exact-timestamps --delete --only-show-errors
     chmod -R a+rX /var/www/html
     docker compose exec -T edge nginx -s reload 2>/dev/null || true
     echo "frontend published"
