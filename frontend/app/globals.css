@@ -814,9 +814,10 @@ textarea:focus {
    -------------------------------------------------------------------------- */
 .login {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
   position: relative;
   overflow: hidden;
 }
@@ -852,7 +853,6 @@ textarea:focus {
   width: 900px;
   height: 700px;
   background: radial-gradient(ellipse at center, rgba(94, 106, 210, 0.1) 0%, transparent 65%);
-  /* Slow enough to read as ambience rather than as an animation. */
   animation: drift 14s ease-in-out infinite alternate;
 }
 .bg-noise {
@@ -874,104 +874,177 @@ textarea:focus {
   }
 }
 
-.login-card {
+/* --- Hero -------------------------------------------------------------
+   A flex column with `align-items: center`. Every child is centred by the
+   layout itself, so no child needs `margin: auto` or inherited text-align to
+   position it — which is what let blocks drift out of alignment before. */
+.hero {
   position: relative;
   z-index: 1;
-  max-width: 440px;
-  width: 100%;
-  /* Centred: the mark, headline and copy sit on the page's axis rather than
-     ragging left against a symmetrical background. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  animation: rise 420ms var(--ease);
-}
-/* The subtitle is deliberately narrower than the heading so it nests inside
-   it. Set equal or wider, its first line starts left of the heading's first
-   character and the two centred blocks fight each other — which is exactly
-   what reads as misalignment. `balance` then spreads the words evenly rather
-   than leaving a short orphan on the last line. */
-.login-card > p {
-  margin: 0 auto 26px;
-  max-width: 348px;
-  text-wrap: balance;
+  width: 100%;
+  max-width: 620px;
 }
 
-/* Everything below the copy shares the card's full width, so the feature
-   icons and the button sit on one left edge. Two near-but-not-equal edges
-   read as a mistake; one shared edge reads as a decision. */
-.login-features {
-  text-align: left;
-  width: 100%;
-}
-.feature-text {
-  text-wrap: pretty; /* avoids a single trailing word on its own line */
-}
-.login-mark {
-  height: 46px;
+.hero-mark {
+  height: 48px;
   width: auto;
-  display: block;
-  margin: 0 auto 24px;
-  filter: brightness(1.15) drop-shadow(0 4px 20px rgba(94, 106, 210, 0.3));
+  filter: brightness(1.15) drop-shadow(0 6px 24px rgba(94, 106, 210, 0.35));
+  animation:
+    rise 500ms var(--ease) backwards,
+    float 7s ease-in-out 500ms infinite alternate;
 }
-.login-card h1 {
-  font-size: 27px;
+@keyframes float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-7px);
+  }
+}
+
+.hero-title {
+  font-size: clamp(28px, 4.2vw, 40px);
   font-weight: 600;
-  letter-spacing: -0.03em;
-  margin: 0 0 10px;
-  line-height: 1.22;
+  letter-spacing: -0.035em;
+  line-height: 1.14;
+  margin: 26px 0 0;
+  max-width: 15ch; /* forces a two-line break that stays balanced */
   text-wrap: balance;
-  max-width: 100%;
+  background: linear-gradient(180deg, #ffffff 0%, #b9c0d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: rise 500ms var(--ease) 80ms backwards;
 }
-.login-card > p {
+
+.hero-sub {
+  font-size: 15px;
+  line-height: 1.62;
   color: var(--text-tertiary);
-  margin: 0 0 26px;
-  font-size: 14px;
-  line-height: 1.6;
+  margin: 16px 0 0;
+  max-width: 46ch;
+  text-wrap: balance;
+  animation: rise 500ms var(--ease) 160ms backwards;
 }
-.login-features {
+
+/* --- Pillars ---------------------------------------------------------
+   A row of three, not a bulleted list. Each is a label and one short line,
+   so the eye takes all three in at once instead of reading paragraphs. */
+.pillars {
   display: grid;
-  gap: 13px;
-  margin-bottom: 28px;
-}
-.feature {
-  display: flex;
-  gap: 11px;
-  align-items: flex-start;
-  animation: rise var(--normal) var(--ease) backwards;
-}
-.feature-icon {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  width: 100%;
+  margin: 34px 0 0;
+  background: var(--border);
   border: 1px solid var(--border);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  font-size: 12px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
-.feature-text {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  line-height: 1.55;
+@media (max-width: 620px) {
+  .pillars {
+    grid-template-columns: 1fr;
+  }
 }
-.feature-text b {
-  color: var(--text-secondary);
-  font-weight: 550;
+.pillar {
+  background: rgba(17, 18, 20, 0.6);
+  backdrop-filter: blur(8px);
+  padding: 15px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: background var(--normal) var(--ease);
+  animation: rise 500ms var(--ease) backwards;
+}
+.pillar:hover {
+  background: rgba(28, 29, 33, 0.75);
+}
+.pillar-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.pillar-detail {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-quaternary);
+  text-wrap: pretty;
+}
+
+/* --- Call to action --------------------------------------------------- */
+.hero-cta {
+  width: 100%;
+  max-width: 330px;
+  margin-top: 30px;
+  animation: rise 500ms var(--ease) 520ms backwards;
+}
+.hero-cta a {
+  display: block;
+}
+.hero-note {
+  font-size: 11.5px;
+  color: var(--text-quaternary);
+  margin: 14px 0 0;
+  line-height: 1.5;
 }
 
 .google-btn {
   width: 100%;
-  padding: 11px;
+  padding: 12px;
   font-size: 14px;
   font-weight: 550;
   background: #fff;
   color: #111;
   border-color: #fff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 .google-btn:hover:not(:disabled) {
-  background: #eceef1;
-  border-color: #eceef1;
+  background: #fff;
+  border-color: #fff;
   color: #111;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 32px rgba(94, 106, 210, 0.28);
+}
+
+/* --- Ticker strip ------------------------------------------------------
+   Names real listed companies, so the page shows what it covers rather than
+   only describing it. Masked at both edges so it reads as a continuous strip
+   rather than text that stops. */
+.ticker-strip {
+  width: 100%;
+  margin-top: 42px;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  animation: fade 700ms var(--ease) 700ms backwards;
+}
+.ticker-track {
+  display: flex;
+  gap: 30px;
+  width: max-content;
+  /* The list is rendered twice, so translating by exactly half loops without
+     a visible jump. */
+  animation: marquee 26s linear infinite;
+}
+.ticker-item {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-quaternary);
+  white-space: nowrap;
+}
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 /* --------------------------------------------------------------------------

@@ -4,30 +4,25 @@ import { useEffect, useState } from "react";
 import { api, loginUrl } from "@/lib/api";
 import { GradientBackground } from "@/components/GradientBackground";
 
-const FEATURES = [
-  {
-    icon: "◈",
-    title: "Grounded in real data",
-    body: "screener.in fundamentals, a year of NSE prices, and news from Indian financial media — chunked, embedded and indexed into pgvector.",
-  },
-  {
-    icon: "❝",
-    title: "Every claim cited",
-    body: "Each figure links back to the article or fundamentals row it came from. If the data doesn't support an answer, it says so instead of inventing one.",
-  },
-  {
-    icon: "◆",
-    title: "Learns how you invest",
-    body: "Tell it you're dividend-focused and avoid debt. It remembers, and screens every recommendation against your own rules.",
-  },
+/**
+ * Short enough to sit in a row. The previous version was three paragraphs of
+ * body copy — that is a features page, not a sign-in. Nobody reads it, and it
+ * pushed the button below the fold on a laptop.
+ */
+const PILLARS = [
+  { label: "Grounded in real data", detail: "screener.in · NSE prices · Indian financial media" },
+  { label: "Every claim cited", detail: "each figure links back to its source" },
+  { label: "Learns how you invest", detail: "your rules, applied to every recommendation" },
 ];
+
+const TICKERS = ["RELIANCE", "TCS", "ITC", "HDFCBANK", "INFY", "SBIN", "WIPRO", "MARUTI"];
 
 export default function LoginPage() {
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // A valid session cookie means the sign-in screen is just a redirect.
+    // A valid session cookie means this screen is just a redirect.
     api
       .me()
       .then(() => {
@@ -35,8 +30,7 @@ export default function LoginPage() {
       })
       .catch(() => setChecking(false));
 
-    // The OAuth callback returns here with ?error=… when the round trip
-    // fails, so surface that rather than silently showing the form again.
+    // The OAuth callback returns here with ?error=… when the round trip fails.
     const err = new URLSearchParams(window.location.search).get("error");
     if (err) {
       setError(
@@ -50,51 +44,56 @@ export default function LoginPage() {
   return (
     <div className="login">
       <GradientBackground />
-      <div className="login-card">
-        <img className="login-mark" src="/logo.png" alt="Sentellent" />
 
-        <h1>Your equity research chief of staff</h1>
-        <p>
+      <main className="hero">
+        <img className="hero-mark" src="/logo.png" alt="Sentellent" />
+
+        <h1 className="hero-title">Your equity research chief of staff</h1>
+
+        <p className="hero-sub">
           An agentic analyst for the NSE and BSE. Follow Indian tickers and ask
-          questions — every answer is grounded in retrieved sources, cited, and
+          questions — every answer grounded in retrieved sources, cited, and
           priced in rupees.
         </p>
 
-        <div className="login-features">
-          {FEATURES.map((f, i) => (
-            <div className="feature" key={f.title} style={{ animationDelay: `${120 + i * 70}ms` }}>
-              <div className="feature-icon">{f.icon}</div>
-              <div className="feature-text">
-                <b>{f.title}</b>
-                <br />
-                {f.body}
-              </div>
+        <div className="pillars">
+          {PILLARS.map((p, i) => (
+            <div className="pillar" key={p.label} style={{ animationDelay: `${260 + i * 90}ms` }}>
+              <span className="pillar-label">{p.label}</span>
+              <span className="pillar-detail">{p.detail}</span>
             </div>
           ))}
         </div>
 
-        {checking ? (
-          <button className="google-btn" disabled>
-            <span className="spinner" /> Checking your session…
-          </button>
-        ) : (
-          <a href={loginUrl} style={{ display: "block" }}>
-            <button className="google-btn">
-              <GoogleMark />
-              Continue with Google
+        <div className="hero-cta">
+          {checking ? (
+            <button className="google-btn" disabled>
+              <span className="spinner" /> Checking your session…
             </button>
-          </a>
-        )}
+          ) : (
+            <a href={loginUrl}>
+              <button className="google-btn">
+                <GoogleMark />
+                Continue with Google
+              </button>
+            </a>
+          )}
+          {error && <div className="error">{error}</div>}
+          <p className="hero-note">Sign-in only — no Gmail or Calendar access is requested.</p>
+        </div>
 
-        {error && <div className="error">{error}</div>}
-
-        <p
-          className="meta"
-          style={{ marginTop: 18, textAlign: "center", lineHeight: 1.55 }}
-        >
-          Sign-in only — no Gmail or Calendar access is requested.
-        </p>
-      </div>
+        {/* A quiet reminder that this covers real listed companies. The list is
+            duplicated so the loop has no visible seam at the wrap point. */}
+        <div className="ticker-strip" aria-hidden>
+          <div className="ticker-track">
+            {[...TICKERS, ...TICKERS].map((t, i) => (
+              <span className="ticker-item" key={i}>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
@@ -102,7 +101,7 @@ export default function LoginPage() {
 /** Google's mark, inlined so the button needs no network request to render. */
 function GoogleMark() {
   return (
-    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden>
+    <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden>
       <path
         fill="#EA4335"
         d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
