@@ -219,31 +219,32 @@ docker image prune -f
 # Refresh the static frontend that CI published to S3. Kept in the same
 # script so one SSM call deploys both halves atomically enough for a
 # single-instance deployment.
-# The frontend is staged in full and then swapped in, rather than synced
-# over the live directory. A sync with --delete applies removals and copies
-# independently: if it is interrupted, the served directory keeps HTML from
-# one build while the chunks that HTML names have already been deleted. The
-# browser then fails with ChunkLoadError on a 404, and the page renders as a
-# blank error with nothing wrong server-side. Staging makes the swap atomic,
-# so the directory is only ever internally consistent.
+# The frontend is published in two passes rather than swapped in.
+#
+# Swapping directories looked safer but is not: /var/www/html is bind-mounted
+# into the nginx container, and moving it leaves the container holding the old
+# inode — which, once the old directory is removed, makes nginx serve 404 for
+# everything while the host filesystem looks perfectly correct.
+#
+# Copy-then-prune keeps the mount point stable and is still safe at every
+# instant: the first pass adds the new build without removing anything, so the
+# directory is briefly a superset of both builds, and only then are the files
+# the new build no longer references deleted. It is never a subset, which is
+# the state that produces ChunkLoadError against a missing asset.
 if aws s3 ls "s3://${frontend_bucket}/frontend/index.html" --region "$AWS_REGION" >/dev/null 2>&1; then
-  rm -rf /var/www/html.new
-  mkdir -p /var/www/html.new
+  mkdir -p /var/www/html
 
-  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html.new/     --region "$AWS_REGION" --only-show-errors
+  # Pass 1: add and overwrite. No deletions.
+  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --only-show-errors
 
-  # Refuse to publish an incomplete download.
-  if [ -f /var/www/html.new/index.html ] && [ -f /var/www/html.new/dashboard/index.html ]; then
-    chmod -R a+rX /var/www/html.new
-    rm -rf /var/www/html.old
-    [ -d /var/www/html ] && mv /var/www/html /var/www/html.old
-    mv /var/www/html.new /var/www/html
-    rm -rf /var/www/html.old
+  if [ -f /var/www/html/index.html ] && [ -f /var/www/html/dashboard/index.html ]; then
+    # Pass 2: prune what the new build no longer references.
+    aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/       --region "$AWS_REGION" --delete --only-show-errors
+    chmod -R a+rX /var/www/html
     docker compose exec -T edge nginx -s reload 2>/dev/null || true
     echo "frontend published"
   else
-    echo "frontend download incomplete; keeping the previous build"
-    rm -rf /var/www/html.new
+    echo "frontend download incomplete; leaving the previous build in place"
   fi
 else
   echo "no frontend build in S3 yet; skipping"
