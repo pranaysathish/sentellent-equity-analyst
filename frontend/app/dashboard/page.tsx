@@ -217,7 +217,7 @@ function TurnView({ turn }: { turn: Turn }) {
         )}
       </div>
       <div className={`body${turn.grounded === false ? " ungrounded" : ""}`}>
-        {renderWithCitations(turn.content, turn.citations ?? [])}
+        {renderAnswer(turn.content, turn.citations ?? [])}
       </div>
       {turn.citations && turn.citations.length > 0 && (
         <div className="sources">
@@ -246,6 +246,67 @@ function TurnView({ turn }: { turn: Turn }) {
       )}
     </div>
   );
+}
+
+/**
+ * Render an answer as structured content.
+ *
+ * The model replies in Markdown — bold for stock names, asterisk bullets for
+ * findings. Rendered as raw text that surfaced as literal `**` around every
+ * company name, which reads as broken output. This handles the small subset
+ * the analyst prompt actually produces (bold, bullets, nesting) rather than
+ * pulling in a full Markdown library and its sanitiser for four constructs.
+ *
+ * Everything still passes through the citation linker, so `**TCS** [3]` keeps
+ * both its emphasis and its clickable source.
+ */
+function renderAnswer(text: string, citations: Citation[]) {
+  const lines = text.split("\n");
+
+  return lines.map((line, i) => {
+    if (!line.trim()) return <div key={i} style={{ height: "0.5em" }} />;
+
+    // Leading asterisks or dashes denote a bullet; the indent before them
+    // denotes nesting depth.
+    const bullet = line.match(/^(\s*)[*-]\s+(.*)$/);
+    if (bullet) {
+      const depth = Math.min(Math.floor(bullet[1].length / 2), 3);
+      return (
+        <div key={i} className="md-bullet" style={{ marginLeft: depth * 16 }}>
+          <span className="md-dot">•</span>
+          <span>{renderInline(bullet[2], citations)}</span>
+        </div>
+      );
+    }
+
+    const heading = line.match(/^#{1,4}\s+(.*)$/);
+    if (heading) {
+      return (
+        <div key={i} className="md-heading">
+          {renderInline(heading[1], citations)}
+        </div>
+      );
+    }
+
+    return <div key={i}>{renderInline(line, citations)}</div>;
+  });
+}
+
+/** Apply bold emphasis, then citation links, to a single line. */
+function renderInline(line: string, citations: Citation[]) {
+  // Split on **bold** and *italic*, keeping the delimiters so they can be
+  // matched and replaced with real elements.
+  const parts = line.split(/(\*\*[^*]+\*\*)/g);
+
+  return parts.map((part, i) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    if (bold) {
+      return (
+        <strong key={i}>{renderWithCitations(bold[1], citations)}</strong>
+      );
+    }
+    return <span key={i}>{renderWithCitations(part, citations)}</span>;
+  });
 }
 
 /**

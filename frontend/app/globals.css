@@ -110,7 +110,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); }
 .messages { flex: 1; overflow-y: auto; padding-right: 6px; }
 .msg { margin-bottom: 16px; }
 .msg .role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 5px; }
-.msg .body { white-space: pre-wrap; }
+.msg .body { white-space: normal; }
 .msg.user .body { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 
 .cite-marker { color: var(--accent); cursor: pointer; font-weight: 600; }
@@ -140,3 +140,9 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); }
 .empty { color: var(--muted); font-size: 13px; font-style: italic; }
 .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Rendered answer content -------------------------------------------- */
+.md-bullet { display: flex; gap: 8px; align-items: flex-start; margin: 3px 0; }
+.md-dot { color: var(--muted); flex-shrink: 0; line-height: 1.55; }
+.md-heading { font-weight: 600; margin: 10px 0 4px; }
+.msg .body strong { color: var(--text); font-weight: 650; }
