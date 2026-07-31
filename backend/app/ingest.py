@@ -350,19 +350,52 @@ async def _ingest_news(
     for item in news:
         by_hash.setdefault(item.content_hash(), item)
 
-    # Pass 2: skip anything already stored. The UNIQUE constraint is the real
-    # guarantee; this check just avoids pointless body fetches and embeddings.
+    # Pass 2: separate what is already stored from what is new. The UNIQUE
+    # constraint is the real guarantee; this lookup just avoids pointless body
+    # fetches and embeddings.
     existing = {
-        row["content_hash"]
+        row["content_hash"]: row["id"]
         for row in await conn.fetch(
-            "SELECT content_hash FROM news_articles WHERE content_hash = ANY($1::text[])",
+            "SELECT id, content_hash FROM news_articles WHERE content_hash = ANY($1::text[])",
             list(by_hash),
         )
     }
+
+    # An article the corpus already holds still has to be linked to *this*
+    # stock. Articles are global; the (article, stock) signal is not. Without
+    # this, a stock whose coverage was ingested earlier — by another user, or
+    # by a previous follow — gets no signals at all, and reads as zero
+    # articles with neutral sentiment forever.
+    for article_id in existing.values():
+        await conn.execute(
+            """
+            INSERT INTO article_stock_signals
+                (article_id, stock_id, sentiment, impact, event_type, rationale)
+            VALUES ($1, $2, 0, 0.5, NULL, NULL)
+            ON CONFLICT (article_id, stock_id) DO NOTHING
+            """,
+            article_id,
+            stock_id,
+        )
+
     fresh = [item for h, item in by_hash.items() if h not in existing]
     result.articles_duplicate += len(by_hash) - len(fresh)
-    if not fresh:
-        return
+
+    # Deliberately no early return when nothing is new: the tagging pass at the
+    # end still has to run, because those freshly linked articles are untagged.
+    if fresh:
+        await _ingest_fresh_articles(conn, stock_id, fresh, result)
+
+    await tag_untagged_articles(conn, stock_id, f)
+
+
+async def _ingest_fresh_articles(
+    conn: asyncpg.Connection,
+    stock_id: int,
+    fresh: list[NewsItem],
+    result: IngestResult,
+) -> None:
+    """Fetch, deduplicate, chunk, embed and index articles not seen before."""
 
     bodies = await asyncio.gather(
         *(sources.fetch_article_body(i.url) for i in fresh),
@@ -382,11 +415,10 @@ async def _ingest_news(
 
     for item, lead_vector in zip(fresh, lead_vectors, strict=True):
         article_id, is_new, duplicate_of = await _store_article(conn, item, lead_vector)
-        if not is_new:
-            result.articles_duplicate += 1
-            continue
-        result.articles_new += 1
 
+        # Link the article to this stock whether or not we were the writer. A
+        # concurrent run may have inserted it between the lookup above and
+        # this call; losing that race must not cost the signal.
         await conn.execute(
             """
             INSERT INTO article_stock_signals
@@ -398,6 +430,11 @@ async def _ingest_news(
             stock_id,
         )
 
+        if not is_new:
+            result.articles_duplicate += 1
+            continue
+        result.articles_new += 1
+
         if duplicate_of is not None:
             # The story is already in the vector store under the original;
             # linking it is enough, re-chunking would just add noise.
@@ -407,8 +444,6 @@ async def _ingest_news(
         result.chunks_indexed += await _index_article_chunks(
             conn, article_id, stock_id, item, result
         )
-
-    await tag_untagged_articles(conn, stock_id, f)
 
 
 def _article_lead(item: NewsItem) -> str:
