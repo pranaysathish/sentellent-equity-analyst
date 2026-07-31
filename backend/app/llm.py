@@ -49,6 +49,35 @@ DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-opus-5",
 }
+
+# Ordered fallbacks, tried when the preferred model is rate-limited.
+#
+# Free-tier quota is enforced per model per project per day, so an exhausted
+# model is not an exhausted key — a sibling model still answers. Without this
+# the whole application stops at the first model's daily ceiling, which a
+# single session of testing reaches. Walking the chain multiplies the usable
+# allowance by the number of models, and on a paid key it simply never
+# triggers.
+#
+# Ordered by capability, so a request degrades rather than failing.
+FALLBACK_MODELS = {
+    "gemini": [
+        "gemini-flash-latest",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    ],
+    "openai": ["gpt-4o-mini", "gpt-4.1-mini"],
+    "anthropic": ["claude-opus-5"],
+}
+
+
+def _model_chain(provider: str, preferred: str) -> list[str]:
+    """Preferred model first, then the rest of its provider's chain."""
+    chain = [preferred] + [m for m in FALLBACK_MODELS.get(provider, []) if m != preferred]
+    return chain
+
+
 DEFAULT_EMBED_MODELS = {
     # gemini-embedding-001 is natively 3072-dim and supports Matryoshka
     # truncation, so `outputDimensionality` trims it to EMBED_DIM. Truncated
@@ -61,6 +90,15 @@ DEFAULT_EMBED_MODELS = {
 
 class LLMError(RuntimeError):
     """Raised when a provider call fails in a way worth retrying."""
+
+
+class LLMRateLimited(LLMError):
+    """The provider is throttling or out of credit.
+
+    Distinct from a generic failure because it is the one case worth trying a
+    sibling model for, and the one case where retrying the same request is
+    guaranteed to fail again.
+    """
 
 
 class LLMRefusal(RuntimeError):
@@ -80,10 +118,6 @@ class Completion:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
-class LLMRateLimited(LLMError):
-    """The provider is throttling. Distinct because it needs a longer wait."""
-
-
 def _retry_policy(interactive: bool) -> AsyncRetrying:
     """Retry budget, chosen by who is waiting.
 
@@ -95,7 +129,13 @@ def _retry_policy(interactive: bool) -> AsyncRetrying:
     """
     attempts, longest_wait = (2, 4) if interactive else (4, 30)
     return AsyncRetrying(
-        retry=retry_if_exception_type((LLMError, httpx.TransportError)),
+        # Rate limiting is deliberately excluded. `_complete_once` already
+        # walks every model in the provider's chain before raising, so a
+        # LLMRateLimited here means all of them are exhausted — retrying the
+        # whole chain just repeats a known-failed request N more times, which
+        # on four models is sixteen wasted calls and sixteen seconds.
+        retry=retry_if_exception_type((LLMError, httpx.TransportError))
+        & ~retry_if_exception_type(LLMRateLimited),
         stop=stop_after_attempt(attempts),
         wait=wait_exponential(multiplier=2, min=1, max=longest_wait),
         reraise=True,
@@ -135,18 +175,34 @@ async def _complete_once(
     max_tokens: int | None,
 ) -> Completion:
     provider = settings.llm_provider
-    model = settings.llm_model or DEFAULT_MODELS.get(provider, "")
+    preferred = settings.llm_model or DEFAULT_MODELS.get(provider, "")
     limit = max_tokens or settings.llm_max_tokens
 
     if provider == "echo":
         return _echo_completion(system, messages, json_mode=json_mode)
-    if provider == "gemini":
-        return await _gemini_complete(model, system, messages, json_mode, limit)
-    if provider == "openai":
-        return await _openai_complete(model, system, messages, json_mode, limit)
-    if provider == "anthropic":
-        return await _anthropic_complete(model, system, messages, json_mode, limit)
-    raise LLMError(f"unknown llm_provider {provider!r}")
+
+    call = {
+        "gemini": _gemini_complete,
+        "openai": _openai_complete,
+        "anthropic": _anthropic_complete,
+    }.get(provider)
+    if call is None:
+        raise LLMError(f"unknown llm_provider {provider!r}")
+
+    # Only a rate limit is worth moving on for. Any other failure is a
+    # property of the request, not the model, and would fail identically on
+    # every sibling — retrying it four times would just be slower.
+    last: LLMRateLimited | None = None
+    for model in _model_chain(provider, preferred):
+        try:
+            completion = await call(model, system, messages, json_mode, limit)
+            if model != preferred:
+                log.info("served by fallback model %s (%s was rate-limited)", model, preferred)
+            return completion
+        except LLMRateLimited as exc:
+            log.warning("%s rate-limited, trying next model", model)
+            last = exc
+    raise last or LLMError("no model available")
 
 
 async def _gemini_complete(
