@@ -354,30 +354,93 @@ def _fetch_price_metrics_sync(ticker: str) -> PriceMetrics | None:
 # --------------------------------------------------------------------------- #
 # News (RSS)
 # --------------------------------------------------------------------------- #
-async def fetch_news(company_name: str, ticker: str, limit: int | None = None) -> list[NewsItem]:
-    """Pull recent Indian financial headlines mentioning a company.
+def _company_query_feeds(company_name: str, ticker: str) -> list[tuple[str, str]]:
+    """Google News RSS searches scoped to a single company.
 
-    Feeds are fetched concurrently; per-feed failures are swallowed so one dead
-    outlet cannot fail the whole ingest.
+    The broad outlet feeds carry whatever is on the front page, so for any
+    individual ticker they almost never hit: a sample of 189 headlines across
+    all eight contained exactly one Reliance story, and that one was a
+    market-wrap false positive. Filtering a firehose is the wrong shape for
+    per-company coverage.
+
+    These searches are company-scoped at the source instead. Google News is an
+    aggregator, so what comes back is still Indian financial media — Economic
+    Times, Moneycontrol, Mint, Business Standard — and each item carries its
+    originating publisher, which is what gets cited.
+    """
+    from urllib.parse import quote_plus
+
+    # Trim the legal suffix: "Reliance Industries Ltd" as an exact phrase
+    # misses headlines that only say "Reliance Industries".
+    short_name = re.sub(
+        r"\s+(ltd|limited|corporation|corp)\.?$", "", company_name, flags=re.I
+    ).strip()
+
+    queries = [
+        f'"{short_name}" (stock OR shares OR results OR NSE)',
+        f'"{ticker}" NSE',
+    ]
+    return [
+        (
+            "Google News",
+            "https://news.google.com/rss/search?"
+            f"q={quote_plus(q)}+when:30d&hl=en-IN&gl=IN&ceid=IN:en",
+        )
+        for q in queries
+    ]
+
+
+async def fetch_news(company_name: str, ticker: str, limit: int | None = None) -> list[NewsItem]:
+    """Pull recent Indian financial news about one company.
+
+    Two sources combined:
+      * company-scoped searches, which supply most of the coverage
+      * the broad outlet feeds, filtered by mention, which catch sector and
+        market-wide stories a company query would miss
+
+    Feeds are fetched concurrently and per-feed failures are swallowed, so one
+    dead outlet cannot fail the whole ingest.
     """
     limit = limit or settings.ingest_news_per_ticker
+
+    company_feeds = _company_query_feeds(company_name, ticker)
     results = await asyncio.gather(
-        *(_fetch_feed(source, url) for source, url in NEWS_FEEDS),
+        *(_fetch_feed(source, url) for source, url in company_feeds + NEWS_FEEDS),
         return_exceptions=True,
     )
 
-    items: list[NewsItem] = []
-    for outcome in results:
+    targeted: list[NewsItem] = []
+    broad: list[NewsItem] = []
+    for index, outcome in enumerate(results):
         if isinstance(outcome, BaseException):
             log.warning("feed fetch failed: %s", outcome)
             continue
-        items.extend(outcome)
+        # The company-scoped feeds come first in the gather order.
+        (targeted if index < len(company_feeds) else broad).extend(outcome)
 
-    matched = [i for i in items if _mentions(i, company_name, ticker)]
-    matched.sort(
+    # Company-scoped results are already about this company; only the broad
+    # feeds need the mention filter.
+    items = targeted + [i for i in broad if _mentions(i, company_name, ticker)]
+
+    seen: set[str] = set()
+    unique: list[NewsItem] = []
+    for item in items:
+        key = item.content_hash()
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+
+    unique.sort(
         key=lambda i: i.published_at or dt.datetime.min.replace(tzinfo=dt.UTC), reverse=True
     )
-    return matched[:limit]
+    log.info(
+        "news for %s: %d targeted, %d matched from broad feeds, %d unique",
+        ticker,
+        len(targeted),
+        len(items) - len(targeted),
+        len(unique),
+    )
+    return unique[:limit]
 
 
 async def _fetch_feed(source: str, url: str) -> list[NewsItem]:
@@ -400,14 +463,43 @@ async def _fetch_feed(source: str, url: str) -> list[NewsItem]:
             continue
         items.append(
             NewsItem(
-                title=title.strip(),
+                title=_clean_title(title),
                 url=link.strip(),
-                source=source,
+                source=_resolve_source(entry, source),
                 published_at=_entry_datetime(entry),
                 summary=_strip_html(entry.get("summary", ""))[:2000],
             )
         )
     return items
+
+
+def _resolve_source(entry: Any, fallback: str) -> str:
+    """Report the outlet that actually published the story.
+
+    Aggregated feeds name themselves as the feed source but carry the real
+    publisher in a `source` element. Citing "Google News" would be both less
+    useful to the reader and less honest about where a claim came from.
+    """
+    origin = entry.get("source")
+    if isinstance(origin, dict):
+        title = (origin.get("title") or "").strip()
+        if title:
+            return title[:80]
+    return fallback
+
+
+_AGGREGATOR_SUFFIX = re.compile(
+    r"\s+-\s+[^-]{2,40}$"  # trailing " - Publisher Name"
+)
+
+
+def _clean_title(title: str) -> str:
+    """Drop the publisher suffix aggregators append to headlines.
+
+    Left in, the same story from two aggregators would hash differently and
+    escape exact deduplication.
+    """
+    return _AGGREGATOR_SUFFIX.sub("", title.strip()).strip()
 
 
 def _entry_datetime(entry: Any) -> dt.datetime | None:

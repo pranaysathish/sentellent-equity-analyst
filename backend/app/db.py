@@ -23,6 +23,7 @@ MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parent.parent / "migrations"
 
 # Arbitrary but fixed application-wide lock ids.
 MIGRATION_LOCK_ID = 947_112_001
+EXTENSION_LOCK_ID = 947_112_002
 
 _pool: asyncpg.Pool | None = None
 
@@ -58,11 +59,26 @@ async def _bootstrap_extensions() -> None:
 
     The `vector` type must be present for `set_type_codec` to succeed, so this
     runs on a throwaway connection ahead of pool creation.
+
+    Serialised behind an advisory lock because `CREATE EXTENSION IF NOT EXISTS`
+    is *not* atomic: two sessions can both pass the existence check and both
+    attempt the insert, and the loser dies with a duplicate-key violation on
+    pg_extension_name_index. With several uvicorn workers starting at once that
+    is not a rare race — it killed a worker on every boot. The redundant
+    UniqueViolationError catch covers the same race across separate processes
+    that somehow bypass the lock.
     """
     conn = await asyncpg.connect(dsn=settings.database_url)
     try:
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        await conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        await conn.execute("SELECT pg_advisory_lock($1)", EXTENSION_LOCK_ID)
+        try:
+            for extension in ("vector", "pg_trgm"):
+                try:
+                    await conn.execute(f"CREATE EXTENSION IF NOT EXISTS {extension}")
+                except asyncpg.exceptions.UniqueViolationError:
+                    log.debug("extension %s created concurrently; continuing", extension)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1)", EXTENSION_LOCK_ID)
     finally:
         await conn.close()
 
