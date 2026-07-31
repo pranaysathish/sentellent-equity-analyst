@@ -86,36 +86,9 @@ cat > /opt/sentellent/docker-compose.yml <<COMPOSE
 name: sentellent
 
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: sentellent
-      POSTGRES_DB: sentellent
-      POSTGRES_PASSWORD: \$${POSTGRES_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    # Tuned down for a 1 GiB host: the defaults assume far more memory and
-    # will have the kernel reap Postgres under load.
-    command: >
-      postgres
-      -c shared_buffers=128MB
-      -c work_mem=4MB
-      -c maintenance_work_mem=64MB
-      -c max_connections=25
-      -c effective_cache_size=384MB
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentellent -d sentellent"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   api:
     image: $ECR_REPOSITORY:latest
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     env_file: /opt/sentellent/.env
     environment:
       DB_POOL_MAX: "8"
@@ -142,14 +115,27 @@ services:
     volumes:
       - /opt/sentellent/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /var/www/html:/usr/share/nginx/html:ro
-
-volumes:
-  pgdata:
 COMPOSE
 
 # nginx exists so that the origin has one stable port and can answer health
 # checks even while the API container is restarting during a deploy.
 cat > /opt/sentellent/nginx.conf <<'NGINX'
+# The origin guard is evaluated once at server level rather than inside each
+# location. nginx's own documentation warns that `if` inside a location is
+# unpredictable when combined with `try_files` — the two are processed in
+# different phases, and the documented-safe uses of `if` are only `return` and
+# `rewrite ... last`. A server-level `if` with `return` avoids that interaction
+# entirely and is evaluated before any location is selected.
+# The origin token is a 48-character random string, which overflows nginx's
+# default map hash bucket and makes it refuse to start with
+# "could not build map_hash". The bucket has to be sized for the longest key.
+map_hash_bucket_size 128;
+
+map $http_x_origin_token $origin_allowed {
+    default              0;
+    "ORIGIN_TOKEN_PLACEHOLDER" 1;
+}
+
 server {
     listen 80 default_server;
     server_name _;
@@ -158,33 +144,20 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    gzip on;
-    gzip_types text/css application/javascript application/json image/svg+xml;
-    gzip_min_length 1024;
+    # Compression is left off. API Gateway proxies the body through without
+    # re-negotiating Content-Encoding, and a mismatch there surfaces in the
+    # browser as an undiagnosable "page couldn't load" while curl succeeds.
+    gzip off;
 
-    # Liveness for the instance itself. Deliberately exempt from the origin
-    # check so it can be probed locally during a deploy.
-    location = /edge-health {
-        access_log off;
-        return 200 "edge ok";
-    }
-
-    # Everything reaching this instance should have come through API Gateway,
-    # which stamps this header. A request straight to the public IP has no
-    # such header and is refused — the security group cannot express this,
-    # because API Gateway egress IPs are not a fixed range.
-    location / {
-        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
-            return 403;
-        }
-        try_files $uri $uri/index.html $uri.html /index.html;
+    # Everything reaching this instance should have arrived through API
+    # Gateway, which stamps this header. A request sent straight to the public
+    # IP carries no such header and is refused. The security group cannot
+    # express this, because API Gateway's egress addresses are not a fixed range.
+    if ($origin_allowed = 0) {
+        return 403;
     }
 
     location /api/ {
-        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
-            return 403;
-        }
-
         proxy_pass         http://api:8000;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
@@ -198,14 +171,16 @@ server {
         proxy_send_timeout    120s;
     }
 
-    # Hashed asset filenames are immutable; HTML must always revalidate so a
-    # deploy is picked up immediately.
+    # Hashed asset filenames are immutable and safe to cache hard.
     location /_next/static/ {
-        if ($http_x_origin_token != "ORIGIN_TOKEN_PLACEHOLDER") {
-            return 403;
-        }
         expires 1y;
         add_header Cache-Control "public, immutable";
+    }
+
+    # Static export: /dashboard/ is dashboard/index.html on disk. Falling back
+    # to /index.html keeps client-side routes working.
+    location / {
+        try_files $uri $uri/index.html $uri.html /index.html;
     }
 }
 NGINX
@@ -257,7 +232,7 @@ chmod +x /opt/sentellent/deploy.sh
 # the edge regardless; CI supplies the API container moments later.
 if ! /opt/sentellent/deploy.sh; then
   echo "initial deploy incomplete (API image not published yet)"
-  docker compose up -d db edge || true
+  docker compose up -d edge || true
 fi
 
 # --------------------------------------------------------------------------- #

@@ -1,0 +1,22 @@
+aws_instance.app: Destroying... [id=i-09b4aab99c517aad3]
+aws_instance.app: Still destroying... [id=i-09b4aab99c517aad3, 10s elapsed]
+aws_instance.app: Still destroying... [id=i-09b4aab99c517aad3, 20s elapsed]
+aws_instance.app: Still destroying... [id=i-09b4aab99c517aad3, 30s elapsed]
+aws_instance.app: Destruction complete after 30s
+aws_subnet.private_b: Creating...
+aws_db_parameter_group.main: Creating...
+aws_security_group.db: Creating...
+aws_subnet.private_b: Creation complete after 1s [id=subnet-0e621bf35a6276437]
+aws_db_subnet_group.main: Creating...
+aws_security_group.db: Creation complete after 2s [id=sg-021c51ffdb946bbb3]
+aws_db_parameter_group.main: Creation complete after 2s [id=sentellent-pg16]
+aws_db_subnet_group.main: Creation complete after 1s [id=sentellent-db]
+aws_db_instance.main: Creating...
+
+Error: creating RDS DB Instance (sentellent-db): operation error RDS: CreateDBInstance, https response error StatusCode: 400, RequestID: 86463361-e143-4b84-9e56-4b222002f524, api error InvalidParameterCombination: Cannot find version 16.6 for postgres
+
+  with aws_db_instance.main,
+  on rds.tf line 61, in resource "aws_db_instance" "main":
+  61: resource "aws_db_instance" "main" {
+
+EXIT=1

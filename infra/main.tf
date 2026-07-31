@@ -44,7 +44,9 @@ locals {
   # behaviour around empty strings and nulls.
   db_password = var.db_password != "" ? var.db_password : random_password.db.result
 
-  database_url = "postgresql://sentellent:${local.db_password}@db:5432/sentellent"
+  # Points at the managed instance rather than a container on the host, so
+  # replacing the instance no longer destroys the data.
+  database_url = "postgresql://sentellent:${local.db_password}@${aws_db_instance.main.endpoint}/sentellent"
 
   gh_owner = split("/", var.github_repository)[0]
   gh_repo  = split("/", var.github_repository)[1]
