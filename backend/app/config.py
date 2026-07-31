@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     # --- Ingestion -----------------------------------------------------------
-    ingest_news_per_ticker: int = 25
+    ingest_news_per_ticker: int = 12
     ingest_http_timeout: float = 20.0
     ingest_user_agent: str = (
         "SentellentEquityAnalyst/1.0 (hiring-challenge; contact via GitHub repo)"

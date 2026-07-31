@@ -200,11 +200,22 @@ async def answer_node(state: AgentState) -> AgentState:
         )
     except llm.LLMError as exc:
         log.error("answer generation failed: %s", exc)
-        text = (
-            "The language model is unavailable right now, so I can't write the "
-            "analysis. The sources I retrieved for your question are listed "
-            "below — they are the material the answer would have been built from."
-        )
+        # A quota rejection is temporary and self-resolving, and saying so is
+        # far more useful than "unavailable" — which reads as broken.
+        if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+            text = (
+                "I've hit the model provider's rate limit, so I can't write the "
+                "analysis right now — this clears on its own in a minute or two. "
+                "The sources I retrieved for your question are below; they are "
+                "the material the answer would have been built from."
+            )
+        else:
+            text = (
+                "The language model is unavailable right now, so I can't write "
+                "the analysis. The sources I retrieved for your question are "
+                "listed below — they are the material the answer would have "
+                "been built from."
+            )
 
     if state.get("persona_updated"):
         text += "\n\n_Noted and saved to your investor profile._"

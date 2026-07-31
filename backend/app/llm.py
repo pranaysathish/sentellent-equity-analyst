@@ -80,10 +80,17 @@ class Completion:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
+class LLMRateLimited(LLMError):
+    """The provider is throttling. Distinct because it needs a longer wait."""
+
+
 _retry = retry(
     retry=retry_if_exception_type((LLMError, httpx.TransportError)),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
+    stop=stop_after_attempt(4),
+    # Rate limits are usually enforced per minute, so a wait that tops out at
+    # eight seconds retries straight back into the same window and burns the
+    # remaining attempts for nothing. This reaches ~30s by the final try.
+    wait=wait_exponential(multiplier=2, min=2, max=30),
     reraise=True,
 )
 
@@ -159,7 +166,9 @@ async def _gemini_complete(
     async with httpx.AsyncClient(timeout=90.0) as client:
         resp = await client.post(url, params={"key": settings.google_api_key}, json=payload)
     if resp.status_code != 200:
-        raise LLMError(f"gemini {resp.status_code}: {resp.text[:400]}")
+        raise (LLMRateLimited if resp.status_code == 429 else LLMError)(
+            f"gemini {resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     candidates = data.get("candidates") or []
@@ -209,7 +218,9 @@ async def _openai_complete(
             json=payload,
         )
     if resp.status_code != 200:
-        raise LLMError(f"openai {resp.status_code}: {resp.text[:400]}")
+        raise (LLMRateLimited if resp.status_code == 429 else LLMError)(
+            f"openai {resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     return Completion(
@@ -248,7 +259,9 @@ async def _anthropic_complete(
             json=payload,
         )
     if resp.status_code != 200:
-        raise LLMError(f"anthropic {resp.status_code}: {resp.text[:400]}")
+        raise (LLMRateLimited if resp.status_code == 429 else LLMError)(
+            f"anthropic {resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     # A safety decline arrives as a 200 with an empty/partial content array,
@@ -322,7 +335,9 @@ async def _gemini_embed(model: str, texts: Sequence[str]) -> list[list[float]]:
     async with httpx.AsyncClient(timeout=90.0) as client:
         resp = await client.post(url, params={"key": settings.google_api_key}, json=payload)
     if resp.status_code != 200:
-        raise LLMError(f"gemini embed {resp.status_code}: {resp.text[:400]}")
+        raise (LLMRateLimited if resp.status_code == 429 else LLMError)(
+            f"gemini embed {resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     return [_normalise(e["values"]) for e in data["embeddings"]]
@@ -338,7 +353,9 @@ async def _openai_embed(model: str, texts: Sequence[str]) -> list[list[float]]:
             json={"model": model, "input": list(texts), "dimensions": EMBED_DIM},
         )
     if resp.status_code != 200:
-        raise LLMError(f"openai embed {resp.status_code}: {resp.text[:400]}")
+        raise (LLMRateLimited if resp.status_code == 429 else LLMError)(
+            f"openai embed {resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     ordered = sorted(data["data"], key=lambda d: d["index"])
