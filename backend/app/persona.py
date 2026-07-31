@@ -303,6 +303,52 @@ async def _rebuild_persona_vector(conn: asyncpg.Connection, user_id: str) -> Non
     )
 
 
+async def forget_fact(user_id: str, fact_id: int) -> None:
+    """Deactivate a stored fact, and clear the profile if it was the last one.
+
+    Facts and weights live in separate tables: the fact holds the text and any
+    screening rule, the weights hold the numbers blended in when it was
+    learned. Deactivating the fact alone left the derived weights in place, so
+    the panel read "nothing learned yet" while still showing a 0.74 income
+    emphasis — the interface contradicting itself, and derived data outliving
+    the input the user asked to remove.
+
+    Weights are kept while any fact remains, since the survivors still justify
+    them, and reset once none do. Re-deriving them on every delete would be
+    more precise but costs a model call per click.
+    """
+    async with db.pool().acquire() as conn, conn.transaction():
+        await conn.execute(
+            "UPDATE persona_facts SET active = false, updated_at = now() "
+            "WHERE id = $1 AND user_id = $2::uuid",
+            fact_id,
+            user_id,
+        )
+        remaining = await conn.fetchval(
+            "SELECT count(*) FROM persona_facts WHERE user_id = $1::uuid AND active",
+            user_id,
+        )
+        if remaining:
+            return
+
+        await conn.execute(
+            """
+            UPDATE user_persona
+               SET weights = $2::jsonb, summary = '', embedding = NULL,
+                   version = version + 1, updated_at = now()
+             WHERE user_id = $1::uuid
+            """,
+            user_id,
+            json.dumps(NEUTRAL_WEIGHTS),
+        )
+        # The persona chunk is retrievable, so it has to go too — otherwise a
+        # forgotten profile could still be cited back at the user.
+        await conn.execute(
+            "DELETE FROM doc_chunks WHERE kind = 'persona' AND user_id = $1::uuid",
+            user_id,
+        )
+
+
 async def load_persona(user_id: str) -> Persona:
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(

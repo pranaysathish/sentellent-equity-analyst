@@ -400,13 +400,12 @@ async def get_persona(user: CurrentUser = Depends(get_current_user)) -> dict[str
 async def forget_fact(
     fact_id: int, user: CurrentUser = Depends(get_current_user)
 ) -> dict[str, str]:
-    """Soft-delete so the user stays in control of what the agent remembers."""
-    await db.execute(
-        "UPDATE persona_facts SET active = false, updated_at = now() "
-        "WHERE id = $1 AND user_id = $2::uuid",
-        fact_id,
-        user.id,
-    )
+    """Soft-delete so the user stays in control of what the agent remembers.
+
+    Clearing the derived weights when the last fact goes is handled in the
+    persona module, alongside the logic that set them.
+    """
+    await persona_mod.forget_fact(user.id, fact_id)
     return {"status": "forgotten"}
 
 

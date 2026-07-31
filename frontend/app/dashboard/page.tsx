@@ -132,12 +132,11 @@ export default function Dashboard() {
       </header>
 
       <div className="shell">
-        <aside>
+        <div className="col">
           <Watchlist follows={follows} onChange={reload} />
-          <ProfilePanel persona={persona} onChange={reload} />
-        </aside>
+        </div>
 
-        <main className="panel chat">
+        <main className="col panel chat">
           <div className="panel-head">
             <h2 className="panel-title">Research chat</h2>
             <span className="meta">Answers cite only ingested sources</span>
@@ -178,6 +177,10 @@ export default function Dashboard() {
             </button>
           </div>
         </main>
+
+        <div className="col col-profile">
+          <ProfilePanel persona={persona} onChange={reload} />
+        </div>
       </div>
     </>
   );
@@ -209,12 +212,12 @@ function Watchlist({ follows, onChange }: { follows: Follow[] | null; onChange: 
   }
 
   return (
-    <div className="panel">
+    <div className="panel fill">
       <div className="panel-head">
         <h2 className="panel-title">Watchlist</h2>
         {follows && follows.length > 0 && <span className="meta">{follows.length} following</span>}
       </div>
-      <div className="panel-body">
+      <div className="panel-body scroll">
         <div style={{ display: "flex", gap: 8, marginBottom: 13 }}>
           <input
             value={ticker}
@@ -263,12 +266,12 @@ function ProfilePanel({
   const weights = Object.entries(persona.weights).sort((a, b) => b[1] - a[1]);
 
   return (
-    <div className="panel">
+    <div className="panel fill">
       <div className="panel-head">
         <h2 className="panel-title">Investor profile</h2>
         {hasProfile && <span className="badge accent">learned</span>}
       </div>
-      <div className="panel-body">
+      <div className="panel-body scroll">
         {!hasProfile ? (
           <div className="empty">
             <div className="empty-title">Nothing learned yet</div>
