@@ -51,7 +51,12 @@ class Settings(BaseSettings):
     llm_provider: Literal["gemini", "openai", "anthropic", "echo"] = "echo"
     llm_model: str = ""  # blank -> provider default
     llm_temperature: float = 0.1
-    llm_max_tokens: int = 1600
+    # Generous because current Gemini models reason before answering and draw
+    # those thinking tokens from the same budget. A run that spent 1,532
+    # tokens thinking had 68 left for the reply and was cut off mid-sentence,
+    # which surfaces as a failed request rather than a short answer. The limit
+    # is a ceiling, not a target — unused budget costs nothing.
+    llm_max_tokens: int = 8000
 
     embedding_provider: Literal["gemini", "openai", "hash"] = "hash"
     embedding_model: str = ""  # blank -> provider default
