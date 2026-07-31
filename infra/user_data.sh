@@ -177,6 +177,14 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # HTML must never be cached. It names the hashed asset files, so a stale
+    # copy points at chunks a later deploy has removed — which surfaces in the
+    # browser as ChunkLoadError against a 404 rather than as anything
+    # diagnosable.
+    location ~* \.html$ {
+        add_header Cache-Control "no-store, must-revalidate" always;
+    }
+
     # Static export: /dashboard/ is dashboard/index.html on disk. Falling back
     # to /index.html keeps client-side routes working.
     location / {
@@ -211,11 +219,32 @@ docker image prune -f
 # Refresh the static frontend that CI published to S3. Kept in the same
 # script so one SSM call deploys both halves atomically enough for a
 # single-instance deployment.
-mkdir -p /var/www/html
-if aws s3 ls "s3://${frontend_bucket}/frontend/" --region "$AWS_REGION" >/dev/null 2>&1; then
-  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html/     --region "$AWS_REGION" --delete
-  chmod -R a+rX /var/www/html
-  docker compose exec -T edge nginx -s reload 2>/dev/null || true
+# The frontend is staged in full and then swapped in, rather than synced
+# over the live directory. A sync with --delete applies removals and copies
+# independently: if it is interrupted, the served directory keeps HTML from
+# one build while the chunks that HTML names have already been deleted. The
+# browser then fails with ChunkLoadError on a 404, and the page renders as a
+# blank error with nothing wrong server-side. Staging makes the swap atomic,
+# so the directory is only ever internally consistent.
+if aws s3 ls "s3://${frontend_bucket}/frontend/index.html" --region "$AWS_REGION" >/dev/null 2>&1; then
+  rm -rf /var/www/html.new
+  mkdir -p /var/www/html.new
+
+  aws s3 sync "s3://${frontend_bucket}/frontend/" /var/www/html.new/     --region "$AWS_REGION" --only-show-errors
+
+  # Refuse to publish an incomplete download.
+  if [ -f /var/www/html.new/index.html ] && [ -f /var/www/html.new/dashboard/index.html ]; then
+    chmod -R a+rX /var/www/html.new
+    rm -rf /var/www/html.old
+    [ -d /var/www/html ] && mv /var/www/html /var/www/html.old
+    mv /var/www/html.new /var/www/html
+    rm -rf /var/www/html.old
+    docker compose exec -T edge nginx -s reload 2>/dev/null || true
+    echo "frontend published"
+  else
+    echo "frontend download incomplete; keeping the previous build"
+    rm -rf /var/www/html.new
+  fi
 else
   echo "no frontend build in S3 yet; skipping"
 fi
