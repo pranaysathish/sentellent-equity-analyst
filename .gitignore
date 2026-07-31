@@ -30,8 +30,16 @@ out/
 *.tfstate
 *.tfstate.*
 crash.log
+
+# Saved plans embed every variable value, including secrets, inside a zip
+# archive — they are as sensitive as state. Matched by prefix and suffix
+# rather than exact name: an earlier rule listed only `tfplan`, and a file
+# named `tfplan5` slipped past it into a public repository.
 tfplan
-tfplan.binary
+tfplan*
+*.tfplan
+*plan.out
+*.tfplan.json
 
 # Editors / OS
 .vscode/
