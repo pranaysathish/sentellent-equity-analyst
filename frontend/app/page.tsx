@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, loginUrl } from "@/lib/api";
+import { GradientBackground } from "@/components/GradientBackground";
 
 const FEATURES = [
   {
@@ -48,6 +49,7 @@ export default function LoginPage() {
 
   return (
     <div className="login">
+      <GradientBackground />
       <div className="login-card">
         <img className="login-mark" src="/logo.png" alt="Sentellent" />
 
