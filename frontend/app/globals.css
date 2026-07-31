@@ -887,15 +887,21 @@ textarea:focus {
 .login-card > p {
   margin-left: auto;
   margin-right: auto;
-  max-width: 400px;
+  max-width: 392px;
+  /* Distributes words evenly across the lines instead of leaving a short
+     orphan on the last one, which is what makes centred copy look ragged. */
+  text-wrap: balance;
 }
 /* The feature list stays left-aligned inside a centred block — centring
-   multi-line body copy makes it markedly harder to read. */
+   multi-line body copy makes it markedly harder to read.
+   Full card width on purpose: at a narrower measure its left edge sits
+   inside the button's, and two near-but-not-quite aligned edges read as a
+   mistake. */
 .login-features {
   text-align: left;
-  max-width: 380px;
-  margin-left: auto;
-  margin-right: auto;
+}
+.feature-text {
+  text-wrap: pretty; /* avoids a single trailing word on its own line */
 }
 .login-mark {
   height: 46px;
@@ -905,11 +911,12 @@ textarea:focus {
   filter: brightness(1.15) drop-shadow(0 4px 20px rgba(94, 106, 210, 0.3));
 }
 .login-card h1 {
-  font-size: 26px;
+  font-size: 27px;
   font-weight: 600;
   letter-spacing: -0.03em;
-  margin: 0 0 9px;
-  line-height: 1.25;
+  margin: 0 0 10px;
+  line-height: 1.22;
+  text-wrap: balance;
 }
 .login-card > p {
   color: var(--text-tertiary);
